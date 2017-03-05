@@ -14,6 +14,10 @@
 #include <map>
 #include <set>
 
+#if defined(CRETE_CONFIG)
+#include <stdint.h>
+#endif // CRETE_CONFIG
+
 struct KTest;
 
 namespace llvm {
@@ -151,6 +155,15 @@ public:
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res) = 0;
+
+#if defined(CRETE_CONFIG)
+  virtual bool getSymbolicSolution(const ExecutionState &state,
+                                   std::vector<
+                                   std::pair<std::string,
+                                   std::vector<unsigned char> > >
+                                   &res,
+                                   std::vector<uint64_t>& addresses) = 0;
+#endif // CRETE_CONFIG
 
   virtual void getCoveredLines(const ExecutionState &state,
                                std::map<const std::string*, std::set<unsigned> > &res) = 0;

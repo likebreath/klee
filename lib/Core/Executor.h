@@ -30,6 +30,10 @@
 #include <map>
 #include <set>
 
+#if defined(CRETE_CONFIG)
+#include "crete-replayer/qemu_rt_info.h"
+#endif // CRETE_CONFIG
+
 struct KTest;
 
 namespace llvm {
@@ -505,6 +509,116 @@ public:
                                std::map<const std::string*, std::set<unsigned> > &res);
 
   Expr::Width getWidthForLLVMType(LLVM_TYPE_Q llvm::Type *type) const;
+
+#if defined(CRETE_CONFIG)
+private:
+  // crete external functions invoked by klee
+  void crete_init_symbolics(ExecutionState &state);
+
+  void crete_init_special_function_handler();
+
+  StatePair crete_concolic_fork(ExecutionState &current, ref<Expr> condition);
+
+  void crete_concolic_branch(ExecutionState &state,
+          const std::vector< ref<Expr> > &conditions,
+          std::vector<ExecutionState*> &result);
+
+  void crete_preprocess_memory_operation(ExecutionState &state,
+          bool isWrite,
+          ref<Expr> address,
+          ref<Expr> value,
+          unsigned bytes,
+          KInstruction *target);
+
+  bool crete_manual_disable_fork(const ExecutionState &state);
+
+private:
+  // crete internal functions
+  MemoryObject *crete_merge_overlapped_mos(ExecutionState &state,
+          uint64_t mo_start_addr, uint64_t mo_size, bool isWrite = true);
+
+  void crete_sync_memory(ExecutionState &state, uint64_t tb_index);
+  void crete_sync_cpu(ExecutionState &state, uint64_t tb_index);
+
+  MemoryObject *crete_get_global(string global_variable_name) const;
+
+  void crete_abortCurrentTBExecution(klee::ExecutionState* state);
+
+  virtual bool getSymbolicSolution(const ExecutionState &state,
+                                   std::vector<
+                                   std::pair<std::string,
+                                   std::vector<unsigned char> > >
+                                   &res,
+                                   std::vector<uint64_t>& addresses);
+
+  std::vector<ref<Expr> > crete_create_concolic_array(
+          ExecutionState* state,
+          const std::string& name,
+          uint64_t size,
+          std::vector<uint8_t> &concreteBuffer);
+
+  //TODO:xxx do we need to make the helper function handlers as static in crete?
+  // handlers for crete intrinsics
+  static void handleCreteInitCpuState(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+  static void handleCreteQemuTbPrologue(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+  static void handleCreteFinishReply(klee::Executor* executor,
+              klee::ExecutionState* state,
+              klee::KInstruction* target,
+              std::vector<klee::ref<klee::Expr> > &args);
+
+  static void handleCreteMakeSymbolic(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+  static void handleCreteAssumeBegin(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+  static void handleCreteAssume(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+  static void handleCreteDebugCapture(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+  // handlers for qemu helper function
+  static void handleQemuRaiseInterrupt(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+  static void handleQemuRaiseInterrupt2(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+
+// Debugging
+  static void handleCreteBcAssert(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+  static void handleCreteVerifyCpuStateOffset(klee::Executor* executor,
+            klee::ExecutionState* state,
+            klee::KInstruction* target,
+            std::vector<klee::ref<klee::Expr> > &args);
+
+  static std::string crete_readStringAtAddress(Executor &executor,
+          ExecutionState &state, ref<Expr> addressExpr);
+#endif // CRETE_CONFIG
 };
   
 } // End klee namespace

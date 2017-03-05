@@ -85,3 +85,11 @@ include $(PROJ_SRC_ROOT)/MetaSMT.mk
 ifneq ("X$(MODULE_NAME)$(BYTECODE_LIBRARY)X","XX")
   CFLAGS := $(filter-out -fsanitize=%,$(CFLAGS))
 endif
+
+# === added to enable CRETE or DEBUG info
+CXX.Flags += -DCRETE_CONFIG=1
+
+CXX.Flags += -I/usr/include/glib-2.0/ -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
+
+LIBS += -lcrete_test_case
+LIBS += -lboost_serialization

@@ -17,6 +17,10 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
 
+#if defined(CRETE_CONFIG)
+#include "crete-replayer/qemu_rt_info.h"
+#endif // CRETE_CONFIG
+
 #include <sys/mman.h>
 using namespace klee;
 
@@ -74,6 +78,12 @@ MemoryManager::MemoryManager(ArrayCache *_arrayCache)
     deterministicSpace = newSpace;
     nextFreeSlot = newSpace;
   }
+
+#if defined(CRETE_CONFIG)
+    next_alloc_address = 0;
+
+    assert(!DeterministicAllocation && "[CRETE ERROR] DeterministicAllocation should be disabled.\n");
+#endif
 }
 
 MemoryManager::~MemoryManager() {
@@ -89,6 +99,7 @@ MemoryManager::~MemoryManager() {
     munmap(deterministicSpace, spaceSize);
 }
 
+#if !defined(CRETE_CONFIG)
 MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
                                       bool isGlobal,
                                       const llvm::Value *allocSite,
@@ -146,15 +157,67 @@ MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
   objects.insert(res);
   return res;
 }
+#else //CRETE_CONFIG
+// UPGRADE: xxx alignment is new
+MemoryObject *MemoryManager::allocate(uint64_t size, bool isLocal,
+                                      bool isGlobal,
+                                      const llvm::Value *allocSite,
+                                      size_t alignment) {
+  if (size > 10 * 1024 * 1024)
+    klee_warning_once(0, "Large alloc: %lu bytes.  KLEE may run out of memory.",
+                      size);
 
+  // Return NULL if size is zero, this is equal to error during allocation
+  if (NullOnZeroMalloc && size == 0)
+    return 0;
+
+  if (!llvm::isPowerOf2_64(alignment)) {
+    klee_warning("Only alignment of power of two is supported");
+    return 0;
+  }
+
+  assert(alignment <= 8 && "[CRETE UPGRADE ERROR] check whether it is safe to perform "
+          "crete customized allocate when alignment is larger than 8\n");
+
+  uint64_t address = get_next_address(size);
+
+  ++stats::allocations;
+  bool isFixed = true;
+  MemoryObject *res = new MemoryObject(address, size, isLocal, isGlobal, isFixed,
+                                       allocSite, this);
+
+  objects.insert(res);
+  return res;
+}
+#endif // CRETE_CONFIG
+
+#if !defined(CRETE_CONFIG)
 MemoryObject *MemoryManager::allocateFixed(uint64_t address, uint64_t size,
-                                           const llvm::Value *allocSite) {
+                                           const llvm::Value *allocSite)
+#else
+MemoryObject *MemoryManager::allocateFixed(uint64_t address, uint64_t size,
+                                           const llvm::Value *allocSite,
+                                           bool crete_call)
+#endif
+{
 #ifndef NDEBUG
   for (objects_ty::iterator it = objects.begin(), ie = objects.end(); it != ie;
        ++it) {
     MemoryObject *mo = *it;
     if (address + size > mo->address && address < mo->address + mo->size)
-      klee_error("Trying to allocate an overlapping object");
+    {
+#if defined(CRETE_CONFIG)
+        // Check on the validity of return is done by crete code;
+        if(crete_call){
+            cerr << "[CRETE ERROR] Trying to allocate an overlapping object: "
+                    << "addr = 0x"<< hex << mo->address
+                    << ", size = " << dec << mo->size << endl;
+            return NULL;
+        }
+#endif // CRETE_CONFIG
+
+        klee_error("Trying to allocate an overlapping object");
+    }
   }
 #endif
 
@@ -178,3 +241,56 @@ void MemoryManager::markFreed(MemoryObject *mo) {
 size_t MemoryManager::getUsedDeterministicSize() {
   return nextFreeSlot - deterministicSpace;
 }
+
+#if defined(CRETE_CONFIG)
+MemoryObject *MemoryManager::findObject(uint64_t address) const {
+  for (objects_ty::iterator it = objects.begin(), ie = objects.end();
+       it != ie; ++it) {
+    MemoryObject *mo = *it;
+    if (address == mo->address )
+      return mo;
+  }
+
+  return 0;
+}
+
+std::vector<MemoryObject *> MemoryManager::findOverlapObjects(uint64_t address,
+        uint64_t size) const {
+    std::vector<MemoryObject *> overlapped_mos;
+
+    for (objects_ty::iterator it = objects.begin(), ie = objects.end();
+            it != ie; ++it) {
+        MemoryObject *mo = *it;
+        if (address+size > mo->address && address < mo->address+mo->size) {
+            overlapped_mos.push_back(mo);
+        }
+    }
+
+    return overlapped_mos;
+}
+
+bool MemoryManager::isOverlappedMO(uint64_t address, uint64_t size) const {
+    for (objects_ty::iterator it = objects.begin(), ie = objects.end();
+            it != ie; ++it) {
+        MemoryObject *mo = *it;
+        if (address+size > mo->address && address < mo->address+mo->size) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+uint64_t MemoryManager::get_next_address(uint64_t size) {
+  if (next_alloc_address < KLEE_ALLOC_RANGE_LOW) {
+    next_alloc_address = KLEE_ALLOC_RANGE_LOW;
+  }
+
+  assert(next_alloc_address + size <= KLEE_ALLOC_RANGE_HIGH && "[MemoryManager::get_next_address] allocate overflow.");
+
+  uint64_t ret = next_alloc_address;
+  next_alloc_address += size;
+
+  return ret;
+}
+#endif // CRETE_CONFIG

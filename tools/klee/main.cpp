@@ -71,6 +71,9 @@
 #include <iterator>
 #include <sstream>
 
+#if defined(CRETE_CONFIG)
+#include "crete-replayer/crete_debug.h"
+#endif
 
 using namespace llvm;
 using namespace klee;
@@ -427,7 +430,19 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
   if (!NoOutput) {
     std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
+
+#if !defined(CRETE_CONFIG)
     bool success = m_interpreter->getSymbolicSolution(state, out);
+#else // CRETE_CONFIG
+    std::vector<uint64_t> addresses;
+    bool success = m_interpreter->getSymbolicSolution(state, out, addresses);
+
+    CRETE_DBG(static uint64_t test_case_count = 1;
+    std::cerr << std::dec << "tc-" << test_case_count++
+            << ", out.size() = " << out.size()
+            << ", success = " << success << std::endl;
+    );
+#endif // CRETE_CONFIG
 
     if (!success)
       klee_warning("unable to get symbolic solution, losing test case");
@@ -452,11 +467,22 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         o->bytes = new unsigned char[o->numBytes];
         assert(o->bytes);
         std::copy(out[i].second.begin(), out[i].second.end(), o->bytes);
-      }
 
+#if defined(CRETE_CONFIG)
+        o->address = addresses[i];
+#endif //CRETE_CONFIG
+      }
+#if !defined(CRETE_CONFIG)
       if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
         klee_warning("unable to write output test case, losing it");
       }
+#else //CRETE_CONFIG
+      crete::creteTraceTag_ty current_tt_explored = state.get_trace_tag_for_tc();
+      if (!crete_kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str(),
+              &current_tt_explored)) {
+          klee_warning("unable to write output test case, losing it");
+      }
+#endif //CRETE_CONFIG
 
       for (unsigned i=0; i<b.numObjects; i++)
         delete[] b.objects[i].bytes;
@@ -930,9 +956,11 @@ void externalsAndGlobalsCheck(const Module *m) {
       if (unsafe.count(ext)) {
         foundUnsafe.insert(*it);
       } else {
+#if !defined(CRETE_CONFIG)
         klee_warning("undefined reference to %s: %s",
                      it->second ? "variable" : "function",
                      ext.c_str());
+#endif
       }
     }
   }

@@ -18,6 +18,11 @@
 #include <vector>
 #include <string>
 
+#if defined(CRETE_CONFIG)
+#include "crete-replayer/crete_debug.h"
+#include <iostream>
+#endif //CRETE_CONFIG
+
 namespace llvm {
   class Value;
 }
@@ -33,6 +38,10 @@ class MemoryObject {
   friend class STPBuilder;
   friend class ObjectState;
   friend class ExecutionState;
+
+#if defined(CRETE_CONFIG)
+  friend class Executor;
+#endif
 
 private:
   static int counter;
@@ -100,6 +109,11 @@ public:
       isUserSpecified(false),
       parent(_parent), 
       allocSite(_allocSite) {
+      CRETE_DBG_MEMORY(
+      std::string mo_info;
+      this->getAllocInfo(mo_info);
+      std::cerr << "MemoryObject(): " << mo_info << std::endl;
+      );
   }
 
   ~MemoryObject();
@@ -236,6 +250,14 @@ private:
 
   void print();
   ArrayCache *getArrayCache() const;
+
+#if defined(CRETE_CONFIG)
+public:
+  void write_n(unsigned offset, std::vector<uint8_t> value);
+  void write_n(unsigned offset, std::vector< ref<Expr> > value);
+  void print_refCount() const;
+  unsigned get_refCount() const;
+#endif
 };
   
 } // End klee namespace

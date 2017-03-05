@@ -77,12 +77,40 @@ ExecutionState::ExecutionState(KFunction *kf) :
     instsSinceCovNew(0),
     coveredNew(false),
     forkDisabled(false),
-    ptreeNode(0) {
+    ptreeNode(0)
+
+#ifdef CRETE_CONFIG
+    ,m_qemu_tb_count(0),
+    concolics(true),
+    crete_cpu_state(NULL),
+    crete_fork_enabled(true),
+    crete_tb_tainted(false),
+    crete_dbg_ta_fail(false),
+    crete_current_tb_pc(0),
+    m_trace_tag_current_node_index(0),
+    m_current_node_explored(false),
+    m_trace_tag_current_node_br_taken_index(0)
+#endif
+{
   pushFrame(0, kf);
 }
 
 ExecutionState::ExecutionState(const std::vector<ref<Expr> > &assumptions)
-    : constraints(assumptions), queryCost(0.), ptreeNode(0) {}
+    : constraints(assumptions), queryCost(0.), ptreeNode(0)
+
+#ifdef CRETE_CONFIG
+    ,m_qemu_tb_count(0),
+    concolics(true),
+    crete_cpu_state(NULL),
+    crete_fork_enabled(true),
+    crete_tb_tainted(false),
+    crete_dbg_ta_fail(false),
+    crete_current_tb_pc(0),
+    m_trace_tag_current_node_index(0),
+    m_current_node_explored(false),
+    m_trace_tag_current_node_br_taken_index(0)
+#endif
+{}
 
 ExecutionState::~ExecutionState() {
   for (unsigned int i=0; i<symbolics.size(); i++)
@@ -121,6 +149,22 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     ptreeNode(state.ptreeNode),
     symbolics(state.symbolics),
     arrayNames(state.arrayNames)
+
+#ifdef CRETE_CONFIG
+    ,m_qemu_tb_count(state.m_qemu_tb_count),
+    concolics(state.concolics),
+    crete_cpu_state(state.crete_cpu_state),
+    crete_fork_enabled(state.crete_fork_enabled),
+    crete_tb_tainted(state.crete_tb_tainted),
+    crete_dbg_ta_fail(state.crete_dbg_ta_fail),
+    crete_current_tb_pc(state.crete_current_tb_pc),
+    creteConcolicsQueue(state.creteConcolicsQueue),
+    m_trace_tag_current_node_index(state.m_trace_tag_current_node_index),
+    m_current_node_explored(state.m_current_node_explored),
+    m_current_node_br_taken(state.m_current_node_br_taken),
+    m_current_node_br_taken_semi_explored(state.m_current_node_br_taken_semi_explored),
+    m_trace_tag_current_node_br_taken_index(state.m_trace_tag_current_node_br_taken_index)
+#endif
 {
   for (unsigned int i=0; i<symbolics.size(); i++)
     symbolics[i].first->refCount++;
@@ -154,6 +198,10 @@ void ExecutionState::popFrame() {
 void ExecutionState::addSymbolic(const MemoryObject *mo, const Array *array) { 
   mo->refCount++;
   symbolics.push_back(std::make_pair(mo, array));
+
+#if defined(CRETE_CONFIG)
+  assert(0 && "[CRETE Error] makeSymbolic should be handled within Executor::handleCreteMakeSymbolic()");
+#endif
 }
 ///
 
@@ -381,3 +429,205 @@ void ExecutionState::dumpStack(llvm::raw_ostream &out) const {
     target = sf.caller;
   }
 }
+
+#if defined(CRETE_CONFIG)
+void ExecutionState::pushCreteConcolic(ConcolicVariable cv) {
+    creteConcolicsQueue.push_back(cv);
+}
+
+ConcolicVariable ExecutionState::getFirstConcolic() {
+    assert(!creteConcolicsQueue.empty() &&
+            "creteConcolicsQueue1 is empty, which means __crete_make_symbolic is executed more than expected!\n");
+
+    ConcolicVariable front_cv= creteConcolicsQueue.front();
+    creteConcolicsQueue.pop_front();
+    return front_cv;
+}
+
+void ExecutionState::printCreteConolic(){
+    std::cerr << "creteConcolicsQueue1.size() = " << std::dec
+            << creteConcolicsQueue.size() << std::endl;
+    for(unsigned long i = 0; i < creteConcolicsQueue.size(); ++i) {
+        std::cerr<<  creteConcolicsQueue[i].m_name << ": "
+                << "0x" << std::hex << creteConcolicsQueue[i].m_guest_addr
+                << std::dec << creteConcolicsQueue[i].m_data_size
+                << std::endl;
+    }
+}
+
+bool ExecutionState::isSymbolics(MemoryObject *mo) {
+    bool ret = false;
+    for (unsigned int i=0; i<symbolics.size(); i++) {
+        if(symbolics[i].first == mo) {
+            ret = true;
+            break;
+        }
+    }
+
+    return ret;
+}
+
+ref<Expr> ExecutionState::getConcreteExpr(ref<Expr> e)
+{
+    ref<Expr> sym_expr = constraints.simplifyExpr(e);
+    return concolics.evaluate(sym_expr);
+}
+
+void ExecutionState::print_stack() const
+{
+    cerr << "Bit-code execution stack:\n";
+    uint32_t count = 0;
+    for(stack_ty::const_reverse_iterator it = stack.rbegin();
+            it != stack.rend(); ++it) {
+        std::cerr << dec << count++ << ": "
+                << it->kf->function->getName().str() <<std::endl;
+    }
+}
+
+void ExecutionState::print_regs(std::string name, const MemoryObject *crete_cpuState)
+{
+    assert(crete_cpuState);
+    const ObjectState* os = addressSpace.findObject(crete_cpuState);
+    assert(os);
+
+    cerr << "addr_crete_cpuState = 0x" << hex << crete_cpuState->address << endl;
+    for(map<uint64_t, pair<std::string, uint64_t> >::const_iterator it
+            = g_qemu_rt_Info->m_debug_cpuOffsetTable.begin();
+            it != g_qemu_rt_Info->m_debug_cpuOffsetTable.end(); ++it) {
+        if(it->second.first.find(name) != std::string::npos) {
+            uint64_t offset = it->first;
+            uint64_t size = it->second.second;
+
+            vector<uint8_t> current_value;
+            for(uint64_t i = 0; i < size; ++i) {
+                klee::ref<klee::Expr> ref_current_value_byte;
+                uint8_t current_value_byte;
+
+                ref_current_value_byte = os->read8(offset + i);
+                if(!isa<klee::ConstantExpr>(ref_current_value_byte)) {
+                    ref_current_value_byte = getConcreteExpr(ref_current_value_byte);
+                    assert(isa<klee::ConstantExpr>(ref_current_value_byte));
+                }
+                current_value_byte = (uint8_t)llvm::cast<klee::ConstantExpr>(
+                        ref_current_value_byte)->getZExtValue(8);
+
+                current_value.push_back(current_value_byte);
+            }
+
+            cerr << it->second.first << ": 0x" << hex << it->first << "[";
+            for(uint64_t i = 0; i < size; ++i) {
+                cerr << " 0x" << hex << (uint32_t)current_value[i];
+            }
+            cerr << "]\n";
+        }
+    }
+}
+
+std::string ExecutionState::crete_get_unique_name(const std::string name)
+{
+    unsigned id = 0;
+    std::string uniqueName = name;
+    while (!arrayNames.insert(uniqueName).second) {
+      uniqueName = name + "_" + llvm::utostr(++id);
+    }
+
+    return uniqueName;
+}
+
+// return the branch is taken or not for consistency check
+void ExecutionState::check_trace_tag(bool &branch_taken, bool &explored_node)
+{
+    // The first branch within the node
+    if(m_current_node_br_taken.empty())
+    {
+        g_qemu_rt_Info->check_trace_tag(m_trace_tag_current_node_index, m_qemu_tb_count,
+                m_current_node_br_taken, m_current_node_br_taken_semi_explored,
+                m_current_node_explored);
+    }
+
+    assert(m_trace_tag_current_node_br_taken_index <
+            (m_current_node_br_taken.size() + m_current_node_br_taken_semi_explored.size()));
+    if(m_trace_tag_current_node_br_taken_index < m_current_node_br_taken.size())
+    {
+        branch_taken = m_current_node_br_taken[m_trace_tag_current_node_br_taken_index++];
+        explored_node =  m_current_node_explored;
+    } else {
+        branch_taken = m_current_node_br_taken_semi_explored[m_trace_tag_current_node_br_taken_index++
+                                                             - m_current_node_br_taken.size()];
+        explored_node = false;
+    }
+
+    // If this is the last branch within the node, reset
+    if(m_trace_tag_current_node_br_taken_index ==
+            (m_current_node_br_taken.size() + m_current_node_br_taken_semi_explored.size()))
+    {
+        m_current_node_br_taken.clear();
+        m_current_node_br_taken_semi_explored.clear();
+        m_trace_tag_current_node_br_taken_index = 0;
+
+        ++m_trace_tag_current_node_index;
+    }
+}
+
+crete::creteTraceTag_ty ExecutionState::get_trace_tag_for_tc() const
+{
+    crete::creteTraceTag_ty ret;
+    vector<bool> current_node_br_taken_semi_explored;
+
+    if(m_current_node_br_taken.empty())
+    {
+        // When the current tc is for the last br within a node (when m_current_node_br_taken is empty),
+        // the m_trace_tag_current_node_index is off by 1, so adjust it to the correct value.
+        uint64_t trace_tag_current_node_index = m_trace_tag_current_node_index -1;
+        ret.reserve(trace_tag_current_node_index);
+        g_qemu_rt_Info->get_trace_tag_for_tc(trace_tag_current_node_index, ret, current_node_br_taken_semi_explored);
+
+        if(current_node_br_taken_semi_explored.empty())
+        {
+            // Negate the last branch within the node, if no semi-explored branches within the node
+            ret.back().m_br_taken.back() = !ret.back().m_br_taken.back();
+        } else {
+            // Negate the last branch from the semi-explored branches
+            current_node_br_taken_semi_explored.back() = !current_node_br_taken_semi_explored.back();
+            ret.back().m_br_taken.insert(ret.back().m_br_taken.end(),
+                    current_node_br_taken_semi_explored.begin(),
+                    current_node_br_taken_semi_explored.end());
+        }
+    } else {
+        // Otherwise the tc is not for the last br witin a node
+        ret.reserve(m_trace_tag_current_node_index);
+        g_qemu_rt_Info->get_trace_tag_for_tc(m_trace_tag_current_node_index, ret, current_node_br_taken_semi_explored);
+
+        crete::CreteTraceTagNode& current_node = ret.back();
+        // the m_trace_tag_current_node_br_taken_index is off by 1
+        uint64_t trace_tag_current_node_br_taken_index = m_trace_tag_current_node_br_taken_index - 1;
+        assert(trace_tag_current_node_br_taken_index <
+                (current_node.m_br_taken.size() + current_node_br_taken_semi_explored.size() - 1)
+                && "[CRETE ERROR] The br to negate should not be the last branch of the current node");
+
+        vector<bool> new_br_taken;
+        if(trace_tag_current_node_br_taken_index < current_node.m_br_taken.size())
+        {
+            // Get the first "m_trace_tag_current_node_br_taken_index" branches of the current node
+            new_br_taken.insert(new_br_taken.begin(),
+                    current_node.m_br_taken.begin(),
+                    current_node.m_br_taken.begin() + trace_tag_current_node_br_taken_index + 1);
+        } else {
+            // when the last branch that needs to be negated is from semi-explored
+            new_br_taken.insert(new_br_taken.begin(),
+                    current_node.m_br_taken.begin(),
+                    current_node.m_br_taken.end());
+            new_br_taken.insert(new_br_taken.end(),
+                    current_node_br_taken_semi_explored.begin(),
+                    current_node_br_taken_semi_explored.begin() +
+                    (trace_tag_current_node_br_taken_index - current_node.m_br_taken.size()) + 1);
+        }
+
+        //negate the last one br
+        new_br_taken.back() = !new_br_taken.back();
+        current_node.m_br_taken = new_br_taken;
+    }
+
+    return ret;
+}
+#endif // CRETE_CONFIG

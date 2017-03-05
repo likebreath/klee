@@ -110,6 +110,12 @@
 using namespace llvm;
 using namespace klee;
 
+#if defined(CRETE_CONFIG)
+#include "crete-replayer/qemu_macros.h"
+#include "crete-replayer/crete_debug.h"
+
+#include <crete/trace_tag.h>
+#endif // CRETE_CONFIG
 
 
 
@@ -396,6 +402,10 @@ Executor::Executor(const InterpreterOptions &opts, InterpreterHandler *ih)
                  ErrorInfo.c_str());
     }
   }
+
+#if defined(CRETE_CONFIG)
+  g_qemu_rt_Info = qemu_rt_info_initialize();
+#endif // CRETE_CONFIG
 }
 
 
@@ -419,6 +429,10 @@ const Module *Executor::setModule(llvm::Module *module,
   specialFunctionHandler->prepare();
   kmodule->prepare(opts, interpreterHandler);
   specialFunctionHandler->bind();
+
+#if defined(CRETE_CONFIG)
+  crete_init_special_function_handler();
+#endif // CRETE_CONFIG
 
   if (StatsTracker::useStatistics() || userSearcherRequiresMD2U()) {
     statsTracker = 
@@ -448,6 +462,10 @@ Executor::~Executor() {
   if (debugInstFile) {
     delete debugInstFile;
   }
+
+#if defined(CRETE_CONFIG)
+  qemu_rt_info_cleanup(g_qemu_rt_Info);
+#endif // CRETE_CONFIG
 }
 
 /***/
@@ -521,6 +539,10 @@ MemoryObject * Executor::addExternalObject(ExecutionState &state,
 extern void *__dso_handle __attribute__ ((__weak__));
 
 void Executor::initializeGlobals(ExecutionState &state) {
+#if defined(CRETE_CONFIG)
+  crete_init_symbolics(state);
+#endif
+
   Module *m = kmodule->module;
 
   if (m->getModuleInlineAsm() != "")
@@ -1110,6 +1132,34 @@ const Cell& Executor::eval(KInstruction *ki, unsigned index,
 void Executor::bindLocal(KInstruction *target, ExecutionState &state, 
                          ref<Expr> value) {
   getDestCell(state, target).value = value;
+
+#if defined(CRETE_CONFIG)
+  CRETE_DBG_TA(
+  if(!isa<ConstantExpr>(value)){
+      state.crete_tb_tainted = true;
+  }
+  );
+
+  CRETE_DBG(
+  std::cerr << "left_value: ";
+  ConstantExpr *CE;
+  if(!isa<ConstantExpr>(value)){
+      ref<Expr> evalResult = state.concolics.evaluate(value);
+      assert(isa<ConstantExpr>(evalResult));
+      CE = dyn_cast<ConstantExpr>(evalResult);
+      std::cerr << "symbolic value";
+  } else {
+      CE = dyn_cast<ConstantExpr>(value);
+  }
+
+  std::string str_val;
+  CE->toString(str_val);
+  std::cerr << " (" << std::hex << std::atoll(str_val.c_str()) << ")\n";
+
+  //  if(!isa<ConstantExpr>(value))
+  //      std::cerr << "tb: %" << dec << state.m_qemu_tb_count + 1 << ": symbolic assignment\n" << std::endl;
+  );
+#endif //CRETE_CONFIG
 }
 
 void Executor::bindArgument(KFunction *kf, unsigned index, 
@@ -1524,6 +1574,22 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
   switch (i->getOpcode()) {
     // Control flow
   case Instruction::Ret: {
+    CRETE_DBG_XMM(
+    std::string func_name = state.stack.back().kf->function->getName();
+    if(func_name.find("xmm") != string::npos) {
+        fprintf(stderr, "return from %s\n", func_name.c_str());
+        state.print_regs("xmm", state.crete_cpu_state);
+    });
+
+    CRETE_DBG_FLT(
+    std::string func_name = state.stack.back().kf->function->getName();
+    if(func_name.find("_f") != string::npos) {
+        fprintf(stderr, "return from %s\n", func_name.c_str());
+        state.print_stack();
+        state.print_regs("_f", state.crete_cpu_state);
+        fprintf(stderr, "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n");
+    });
+
     ReturnInst *ri = cast<ReturnInst>(i);
     KInstIterator kcaller = state.stack.back().caller;
     Instruction *caller = kcaller ? kcaller->inst : 0;
@@ -1621,7 +1687,12 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       assert(bi->getCondition() == bi->getOperand(0) &&
              "Wrong operand index!");
       ref<Expr> cond = eval(ki, 0, state).value;
+
+#if !defined(CRETE_CONFIG)
       Executor::StatePair branches = fork(state, cond, false);
+#else
+      Executor::StatePair branches = crete_concolic_fork(state, cond);
+#endif
 
       // NOTE: There is a hidden dependency here, markBranchVisited
       // requires that we still be in the context of the branch
@@ -1750,6 +1821,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       }
       std::vector<ExecutionState*> branches;
       branch(state, conditions, branches);
+//      crete_concolic_branch(state, conditions, branches);
 
       std::vector<ExecutionState*>::iterator bit = branches.begin();
       for (std::vector<BasicBlock *>::iterator it = bbOrder.begin(),
@@ -1778,6 +1850,28 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     unsigned numArgs = cs.arg_size();
     Value *fp = cs.getCalledValue();
     Function *f = getTargetFunction(fp, state);
+
+#if defined(CRETE_CONFIG)
+    CRETE_DBG_XMM(
+    if(f){
+        std::string func_name = f->getName();
+        if(func_name.find("xmm") != string::npos) {
+            fprintf(stderr, "call %s\n", func_name.c_str());
+            state.print_regs("xmm", state.crete_cpu_state);
+        }
+    });
+
+    CRETE_DBG_FLT(
+    if(f){
+        std::string func_name = f->getName();
+        if(func_name.find("_f") != string::npos) {
+            fprintf(stderr, "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\n");
+            fprintf(stderr, "call %s\n", func_name.c_str());
+            state.print_stack();
+            state.print_regs("_f", state.crete_cpu_state);
+        }
+    });
+#endif // CRETE_CONFIG
 
     // Skip debug intrinsics, we can't evaluate their metadata arguments.
     if (f && isDebugIntrinsic(f, kmodule))
@@ -2110,7 +2204,14 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
       count = Expr::createZExtToPointerWidth(count);
       size = MulExpr::create(size, count);
     }
+
+#if !defined(CRETE_CROSS_CHECK)
     executeAlloc(state, size, true, ki);
+#else
+    // Initialize allocated memory as zero, to bypass the failed cross
+    // check on fpregs, caused by data padding for struct alignment
+    executeAlloc(state, size, true, ki, true);
+#endif
     break;
   }
 
@@ -2952,6 +3053,10 @@ void Executor::terminateStateOnError(ExecutionState &state,
                                      enum TerminateReason termReason,
                                      const char *suffix,
                                      const llvm::Twine &info) {
+#if defined(CRETE_CONFIG)
+  state.print_stack();
+#endif
+
   std::string message = messaget.str();
   static std::set< std::pair<Instruction*, std::string> > emittedErrors;
   Instruction * lastInst;
@@ -3015,6 +3120,13 @@ void Executor::callExternalFunction(ExecutionState &state,
   if (specialFunctionHandler->handle(state, function, target, arguments))
     return;
   
+#if defined(CRETE_CONFIG)
+  fprintf(stderr, "[CRETE ERROR] Calling external function %s: missing in helper.bc from qemu.\n",
+          function->getName().data());
+  state.print_stack();
+  assert(0);
+#endif
+
   if (NoExternals && !okExternals.count(function->getName())) {
     klee_warning("Calling not-OK external function : %s\n",
                function->getName().str().c_str());
@@ -3323,6 +3435,35 @@ void Executor::executeMemoryOperation(ExecutionState &state,
       value = state.constraints.simplifyExpr(value);
   }
 
+#if defined(CRETE_CONFIG)
+  // Concretize the address if it is symbolic address, based on concrete values
+  if (!isa<ConstantExpr>(address)){
+      ref<Expr> sym_address = state.constraints.simplifyExpr(address);
+      address = state.concolics.evaluate(sym_address);
+
+      CRETE_DBG_MEMORY(
+      cerr << "[executeMemoryOperation] symbolic address = " << endl;
+      sym_address->dump();
+
+      ConstantExpr *CE;
+      assert(isa<ConstantExpr>(address));
+      CE = dyn_cast<ConstantExpr>(address);
+      string str_val;
+      CE->toString(str_val);
+
+      cerr << "\nSymbolic address is concretized to: 0x"
+              << hex << atoll(str_val.c_str()) << ")\n";
+      );
+
+      CRETE_DBG(
+      fprintf(stderr, "[CRETE Warning] Concretization: symbolic address.\n");
+      );
+  }
+
+  crete_preprocess_memory_operation(state, isWrite, address,
+          value, bytes, target);
+#endif // CRETE_CONFIG
+
   // fast path: single in-bounds resolution
   ObjectPair op;
   bool success;
@@ -3423,6 +3564,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     if (incomplete) {
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {
+#if defined(CRETE_CONFIG)
+      assert(0 && "[CRETE ERROR] This should never happen: all memory errors should be"
+                "caught at crete_preprocess_memory_operation()\n");
+#endif
+
       terminateStateOnError(*unbound, "memory error: out of bound pointer", Ptr,
                             NULL, getAddressInfo(*unbound, address));
     }
@@ -3760,3 +3906,962 @@ Interpreter *Interpreter::create(const InterpreterOptions &opts,
                                  InterpreterHandler *ih) {
   return new Executor(opts, ih);
 }
+
+#if defined(CRETE_CONFIG)
+/// crete external functions for klee
+
+/* Symbolic variables are constructed and initialized by 0s; they will be made as symbolic when
+ * "__crete_make_symbolic" is invoked.
+ * */
+void Executor::crete_init_symbolics(ExecutionState &state) {
+    // Create MO/OS pair for concolic variables based on the info QemuRuntimeInfo::m_concolics
+    concolics_ty temp_concolics = g_qemu_rt_Info->get_concolics();
+
+    ObjectState  *temp_os;
+    MemoryObject *temp_mo;
+    for(concolics_ty::iterator it = temp_concolics.begin();
+            it != temp_concolics.end(); ++it) {
+        temp_mo = memory->allocateFixed((*it)->m_guest_addr, (*it)->m_data_size, 0, true);
+        if(temp_mo == NULL) {
+            state.print_stack();
+            assert(0);
+        }
+
+        temp_mo->setName((*it)->m_name);
+
+        temp_os = bindObjectInState(state, temp_mo, false);
+        temp_os->write_n(0, std::vector<uint8_t>());
+
+//        modi_objectPair temp_op(temp_mo,temp_os);
+        state.pushCreteConcolic(**it);
+
+        CRETE_DBG(
+        std::cerr << "[CRETE] init_qemu_memory() is invoked.\n"
+        << "concolic_name = " << (*it)->m_name
+        << ", concolic_mo->address = 0x" << std::hex << (*it)->m_guest_addr
+        << ", concolic_mo->size = " << (*it)->m_data_size << std::dec << std::endl;
+        );
+    }
+}
+
+void Executor::crete_init_special_function_handler() {
+    Function* function;
+
+    function = kmodule->module->getFunction("crete_init_cpu_state");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteInitCpuState);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("crete_qemu_tb_prologue");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteQemuTbPrologue);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("crete_finish_replay");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteFinishReply);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("helper_crete_make_symbolic");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteMakeSymbolic);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("helper_crete_assume_begin");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteAssumeBegin);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("helper_crete_assume");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteAssume);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("helper_crete_debug_capture");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteDebugCapture);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("raise_interrupt2");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleQemuRaiseInterrupt2);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("crete_bc_assert");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteBcAssert);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+    function = kmodule->module->getFunction("crete_verify_cpuState_offset");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteVerifyCpuStateOffset);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+}
+
+Executor::StatePair
+Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
+{
+    assert(!RandomizeFork &&
+            "RandomizeFork is enabled, which means the statePair returned by fork could be swapped.\n");
+
+    // Check against trace tag
+    // Only check trace tag when klee is executing the captured code
+    //  (code from helper functions and klee's own code for checking should
+    //  not check with trace tag)
+    bool check_trace_tag = (current.stack.size() == 2) ? true:false;
+
+    bool branch_taken;
+    bool explored_node;
+    if(check_trace_tag) {
+        current.check_trace_tag(branch_taken, explored_node);
+    }
+
+    Executor::StatePair branches;
+    // Fork now is only disabled when handling crete_assume()
+    if(current.crete_fork_enabled && !crete_manual_disable_fork(current))
+    {
+        // Does not fork when "check_trace_tag" is valid and the node/branch has been not explored
+        if(!check_trace_tag || !explored_node)
+        {
+            branches = fork(current, condition, false);
+        }
+    }
+
+    ExecutionState *trueState  = branches.first;
+    ExecutionState *falseState = branches.second;
+
+    ref<Expr> evalResult = current.concolics.evaluate(condition);
+    assert(isa<ConstantExpr>(evalResult));
+    ref<ConstantExpr> condition_value = dyn_cast<ConstantExpr>(evalResult);
+
+    if(check_trace_tag)
+    {
+        assert(branch_taken == condition_value->isTrue());
+    } else {
+        // FIXME: xxx
+        // klee may fork from outside captured bitcode, such as fork from
+        // qemu's helper functions, and KLEE's check (over_shift check, etc).
+        // Test cases generated from those forks should be treated specially,
+        // as they are not for exploring a new path back to the binary under
+        // test and should not be a part of the trace tag process.
+        if(trueState && falseState){
+            current.print_stack();
+
+            assert(!(trueState && falseState) &&
+                    "[CRETE FIXME] klee forks not from captured bitcode.\n");
+        }
+    }
+
+    if(trueState && falseState){
+        if (condition_value->isTrue()) {
+            terminateStateEarly(*falseState,
+                    "Terminate the falseState to generate a test case.\n");
+            branches.second = NULL;
+        } else {
+            terminateStateEarly(*trueState,
+                    "Terminate the trueState to generate a test case.\n");
+            branches.first= NULL;
+        }
+    } else if (!trueState && !falseState) {
+        // when STP timeout or fork is disabled, we just proceed with the path that
+        // should be taken with concrete values
+        if (condition_value->isTrue()) {
+            addConstraint(current, condition);
+
+            branches.first = &current;
+            branches.second = NULL;
+        } else {
+            addConstraint(current, Expr::createIsZero(condition));
+
+            branches.first = NULL;
+            branches.second = &current;
+        }
+    }
+
+    return branches;
+}
+
+void Executor::crete_concolic_branch(ExecutionState &state,
+        const std::vector< ref<Expr> > &conditions,
+        std::vector<ExecutionState*> &result)
+{
+    unsigned N = conditions.size();
+    unsigned count_matched_case = 0;
+    for (unsigned i=0; i < N; ++i){
+        if (result[i]){
+            ref<Expr> evalResult = result[i]->concolics.evaluate(conditions[i]);
+            assert(isa<ConstantExpr>(evalResult));
+            ref<ConstantExpr> condition_value = dyn_cast<ConstantExpr>(evalResult);
+
+            if(condition_value->isFalse()){
+                terminateStateEarly(*result[i],
+                        "Terminate the a state forked in switch statement to generate a test case.\n");
+                result[i] = NULL;
+            } else {
+                ++count_matched_case;
+            }
+        }
+    }
+
+    assert(count_matched_case == 1 && "There should only be only match case.");
+}
+/*
+ * Mainly to merge existing MOs, as CRETE creates memory on-the-fly
+ * For read memory operation, just creat a new MO for the given address with the given size
+ * if no overlapped MO was found
+ */
+void Executor::crete_preprocess_memory_operation(ExecutionState &state,
+        bool isWrite,
+        ref<Expr> address,
+        ref<Expr> value,
+        unsigned bytes,
+        KInstruction *target) {
+    assert(isa<ConstantExpr>(address));
+    ConstantExpr *temp_ce =  dyn_cast<ConstantExpr>(address);
+    uint64_t temp_addr = temp_ce->getZExtValue();
+
+    bool is_overlapped =  memory->isOverlappedMO(temp_addr, bytes);
+    if(is_overlapped){
+        crete_merge_overlapped_mos(state, temp_addr, bytes, isWrite);
+    } else {
+        if(!isWrite) {
+            CRETE_DBG(
+            std::cerr << "[CRETE Error] Missing address for load MO is: "
+                      << std::hex << temp_addr << '\n' << std::dec;
+            state.print_stack();
+            );
+
+            assert(0 && "Load MO missing!\n");
+        }
+
+        // If no overlapped existing mo is found, just create a new mo for this address and size
+        MemoryObject *temp_mo = memory->allocateFixed(temp_addr, bytes, 0, true);
+        if(temp_mo == NULL) {
+            state.print_stack();
+            assert(0);
+        }
+        bindObjectInState(state, temp_mo, false);
+    }
+}
+
+bool Executor::crete_manual_disable_fork(const ExecutionState &state)
+{
+    bool ret = false;
+
+    // 1. check for hard-coded tb
+    if(state.stack.size() == 2)
+    {
+        ret = ret || is_in_fork_blacklist(state.crete_current_tb_pc);
+    }
+
+    return ret;
+}
+
+/// crete internal functions
+
+/* Merge the current existed MOs with the given MO. Bytes that were not allocated will be assigned as 0.
+ * mo_start_addr: the start address of the given MO
+ * mo_size: the size of the given MO
+ * return the merged MO
+ * For read memory operation, existing MOs must cover all bytes of the given MO
+ * */
+MemoryObject *Executor::crete_merge_overlapped_mos(ExecutionState &state,
+        uint64_t mo_start_addr, uint64_t mo_size, bool isWrite){
+    //0. get the overlapped MOs (could be multiple ones)
+    std::vector<MemoryObject *> overlapped_mos = memory->findOverlapObjects(mo_start_addr, mo_size);
+    assert(!overlapped_mos.empty() && "No overlapped MO for the given MO.\n");
+
+    //The only overlapped MO covers the given MO, just return it.
+    if(overlapped_mos.front()->address <= mo_start_addr &&
+            (overlapped_mos.front()->address + overlapped_mos.front()->size)
+            >= (mo_start_addr + mo_size)) {
+        assert(overlapped_mos.size() == 1);
+        return overlapped_mos.front();
+    }
+
+    // Put overlapped MOs into a sorted map, and assure they are not from ExecutionState::symbolics
+    std::map<uint64_t,  MemoryObject *> ordered_overlapped_mos;
+    for(std::vector<MemoryObject *>::iterator it = overlapped_mos.begin();
+                    it != overlapped_mos.end(); ++it) {
+        assert(!state.isSymbolics(*it) &&
+                "[CRETE ERROR] The given MO is overlapped with symbolics MO\n");
+        ordered_overlapped_mos.insert(std::make_pair((*it)->address, *it));
+    }
+
+    // Calculate the address range of existing overlapped MOs (old_mos_*) and
+    // the address range of the given MO (target_mo_*)
+    uint64_t old_mos_start_addr = ordered_overlapped_mos.begin()->second->address;
+    uint64_t old_mos_end_addr = ordered_overlapped_mos.rbegin()->second->address +
+            ordered_overlapped_mos.rbegin()->second->size;
+    uint64_t old_mos_size = old_mos_end_addr - old_mos_start_addr;
+
+    uint64_t target_mo_start_addr = mo_start_addr;
+    uint64_t target_mo_size = mo_size;
+    uint64_t target_mo_end_addr = target_mo_start_addr + target_mo_size;
+
+    // Save the original state of OSs and delete existing overlapped MO/OSs
+    std::vector< ref<Expr> > old_os_value;
+    uint64_t previous_mo_end_addr = ordered_overlapped_mos.begin()->second->address;
+
+    for(std::map<uint64_t, MemoryObject*>::iterator it = ordered_overlapped_mos.begin();
+            it != ordered_overlapped_mos.end(); ++it) {
+        MemoryObject *temp_mo = it->second;
+
+        if(temp_mo->address != previous_mo_end_addr) {
+            if(isWrite){
+                // For write, Make up the bytes that are not allocated in the overlapped mos
+                uint64_t makeup_size = temp_mo->address - previous_mo_end_addr;
+                assert(makeup_size > 0);
+
+                for(uint64_t i = 0; i < makeup_size; ++i){
+                    old_os_value.push_back(ConstantExpr::create(0, 8));
+                }
+            } else {
+                // For read, this indicates an missing Memory
+                CRETE_DBG(
+                std::cerr << "[CRETE Error] Missing address for load MO is: 0x"
+                          << std::hex << mo_start_addr << std::dec  << ", "
+                          <<  mo_size << "bytes\n" ;
+                state.print_stack();
+                );
+
+                assert(0 && "Load MO missing!\n");
+            }
+        }
+
+        previous_mo_end_addr = temp_mo->address + temp_mo->size;
+
+        //1. Save the original value of the existing value;
+        const ObjectState *old_os = state.addressSpace.findObject(temp_mo);
+        assert(old_os &&
+                "[CRETE ERROR] the corresponding os for a given (overlapped) mo is not found.\n");
+
+        for(unsigned int i = 0; i < old_os->size; ++i) {
+            old_os_value.push_back(old_os->read8(i));
+        }
+
+        CRETE_DBG_MEMORY(
+        uint64_t old_addr = temp_mo->address;
+        uint64_t old_size = temp_mo->size;
+        uint64_t target_addr = mo_start_addr;
+        uint64_t target_size = mo_size;
+
+        std::cerr << "[overlap mo] An existing MO is found: (0x" << std::hex << old_addr << ", 0x" << old_size
+                << "), which overlapps with new target MO: (0x" << target_addr << ", 0x" << target_size << ")\n";
+
+        string mo_info;
+        temp_mo->getAllocInfo(mo_info);
+        std::cerr << "info of overlapped mo: " << mo_info << std::endl;
+        );
+
+        //2. un-bind os/mo pair in the addressSpace of the current state
+        //  it should delete the mo/os, as the overlapped mo/os should have no other references
+        state.addressSpace.unbindObject(temp_mo);
+    }
+    assert(old_mos_size == old_os_value.size());
+
+    //3.create new mo that covers the overlapped old mos and the target mo
+    uint64_t new_mo_start_addr = old_mos_start_addr <= target_mo_start_addr ?
+            old_mos_start_addr:target_mo_start_addr;
+    uint64_t new_mo_end_addr = old_mos_end_addr >= target_mo_end_addr ?
+            old_mos_end_addr:target_mo_end_addr;
+    uint64_t new_mo_size = new_mo_end_addr - new_mo_start_addr;
+
+    CRETE_DBG_MEMORY(
+    std::cerr << "[overlap mo] new_addr = 0x" << std::hex << new_mo_start_addr
+            << ", new_size = 0x" << new_mo_size << std::dec << std::endl;
+    );
+
+    MemoryObject *new_mo = memory->allocateFixed(new_mo_start_addr, new_mo_size, 0, true);
+    if(new_mo == NULL) {
+        state.print_stack();
+        assert(0);
+    }
+
+    //4. bind new mo/os pair in current state
+    ObjectState *new_os = bindObjectInState(state, new_mo, false);
+
+    //5. restore old value to new object state
+    uint64_t new_os_offset = old_mos_start_addr - new_mo_start_addr;
+    new_os->write_n(new_os_offset, old_os_value);
+
+    return new_mo;
+}
+
+/* Synchronize the memory between offline (klee) and online (qemu)
+ * */
+void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
+{
+    const memoSyncTable_ty& memo_sync_table = g_qemu_rt_Info->get_memoSyncTable(tb_index);
+
+    for(memoSyncTable_ty::const_iterator it = memo_sync_table.begin();
+            it != memo_sync_table.end(); ++it ) {
+
+        uint64_t addr = it->first;
+        uint8_t dumped_byte_value = it->second;
+
+        ObjectPair res;
+        bool found = state.addressSpace.resolveOne(ConstantExpr::alloc(addr, Expr::Int64), res);
+        if(found) {
+            const MemoryObject *mo = res.first;
+            const ObjectState *os = res.second;
+            assert(mo && os);
+            assert(addr >= mo->address);
+
+            // read the current value
+            ref<Expr>  ref_current_value_byte = os->read8(addr - mo->address);
+            if(!isa<ConstantExpr>(ref_current_value_byte)) {
+                ref_current_value_byte = state.concolics.evaluate(
+                        state.constraints.simplifyExpr(ref_current_value_byte));
+            }
+            uint8_t current_byte_value = (uint8_t)cast<ConstantExpr>(ref_current_value_byte)->getZExtValue(8);
+
+            // check-side effects
+            if(dumped_byte_value != current_byte_value) {
+                ObjectState* wos = state.addressSpace.getWriteable(mo, os);
+                wos->write8(addr - mo->address, dumped_byte_value);
+
+                CRETE_DBG(
+                fprintf(stderr, "[CRETE Warning] memory side effect on 0x%p: %d => %d (potential concretization)\n",
+                        (void *)addr, (uint32_t)current_byte_value, (uint32_t)dumped_byte_value);
+                );
+            }
+        } else {
+            MemoryObject *temp_mo = memory->allocateFixed(addr, 1, 0, true);
+            if(temp_mo == NULL) {
+                state.print_stack();
+                assert(0);
+            }
+            ObjectState *temp_os = bindObjectInState(state, temp_mo, false);
+            temp_os->write8(0, dumped_byte_value);
+        }
+    }
+}
+
+void Executor::crete_sync_cpu(ExecutionState& state, uint64_t tb_index)
+{
+    const MemoryObject *mo = state.crete_cpu_state;
+    assert(mo);
+    const ObjectState* os = state.addressSpace.findObject(mo);
+    assert(os);
+
+    ObjectState* wos = state.addressSpace.getWriteable(mo, os);
+
+    CRETE_CK(g_qemu_rt_Info->cross_check_cpuState(state, wos, tb_index););
+
+    g_qemu_rt_Info->sync_cpuState(wos, tb_index);
+}
+
+void Executor::crete_abortCurrentTBExecution(klee::ExecutionState* state) {
+    klee::Executor* executor = this;
+
+    assert(state->stack.size() >= 3);
+    while (state->stack.size() >= 3) {
+        state->popFrame();
+
+        if (executor->statsTracker)
+            executor->statsTracker->framePopped(*state);
+    }
+
+    // Emulate the return from current_tb to main
+    assert(state->stack.size() == 2 && "Error: main and current_tb should be in the stack of klee.");
+
+    KInstIterator kcaller = state->stack.back().caller;
+    Instruction *caller = kcaller ? kcaller->inst : 0;
+    assert(caller);
+
+    //Pop the stack frame of current_tb
+    state->popFrame();
+    if (executor->statsTracker)
+        executor->statsTracker->framePopped(*state);
+
+    // Set the return value of current_tb to main as 0
+    ref<Expr> fake_ret = ConstantExpr::create(0, 64);
+    LLVM_TYPE_Q Type *t = caller->getType();
+    assert(executor->getWidthForLLVMType(t) == fake_ret->getWidth()
+            && "The type of return value of current_tb should be 64 bits");
+    executor->bindLocal(kcaller, *state, fake_ret);
+
+    //Set pc to the next instruction of the call of the current_tb in main
+    state->pc = kcaller;
+    ++state->pc;
+}
+
+bool Executor::getSymbolicSolution(const ExecutionState &state,
+                                   std::vector<
+                                   std::pair<std::string,
+                                   std::vector<unsigned char> > >
+                                   &res,
+                                   std::vector<uint64_t>& addresses) {
+    // UPGRADE: xxx
+    getSymbolicSolution(state, res);
+
+    for (unsigned i = 0; i != state.symbolics.size(); ++i)
+    {
+        addresses.push_back(state.symbolics[i].first->address);
+    }
+
+    return true;
+}
+
+std::vector<ref<Expr> > Executor::crete_create_concolic_array(
+        ExecutionState* state,
+        const std::string& name,
+        uint64_t size,
+        std::vector<uint8_t> &concreteBuffer) {
+    std::string sname = state->crete_get_unique_name(name);
+
+    // UPGRADE: xxx
+    const Array *array = arrayCache.CreateArray(sname, size);
+//    const Array *array = new Array(sname, size);
+
+    UpdateList ul(array, 0);
+
+    std::vector<ref<Expr> > result;
+    result.reserve(size);
+
+    for(unsigned i = 0; i < size; ++i) {
+        result.push_back(ReadExpr::create(ul,
+                    ConstantExpr::alloc(i,Expr::Int32)));
+    }
+
+    //Add it to the set of symbolic expressions, to be able to generate
+    //test cases later.
+    //Dummy memory object
+    MemoryObject *mo = new MemoryObject(0, size, false, false, false, NULL, NULL);
+    mo->setName(sname);
+
+    //bindObjectInState(state, mo, false, array);
+    ++mo->refCount;
+    state->symbolics.push_back(std::make_pair(mo, array));
+
+    state->concolics.add(array, concreteBuffer);
+
+    return result;
+}
+
+// Initialize cpuState based the initial cpuState dumped
+void Executor::handleCreteInitCpuState(klee::Executor* executor,
+        klee::ExecutionState* state,
+        klee::KInstruction* target,
+        std::vector<klee::ref<klee::Expr> > &args)
+{
+    assert(args.size() == 1);
+
+    ref<Expr> ptr_cpu_state= args[0];
+    assert(isa<klee::ConstantExpr>(ptr_cpu_state)
+            && "Input of crete_init_cpu_state() should be constant!\n");
+
+    ObjectPair res;
+    bool found = state->addressSpace.resolveOne(dyn_cast<ConstantExpr>(ptr_cpu_state), res);
+    assert(found && "[CRETRE Error] can't find cpu_state based on the input of crete_init_cpu_state()\n");
+
+    const MemoryObject *mo = res.first;
+    const ObjectState *os = res.second;
+    assert(mo && os);
+
+    vector<uint8_t> init_cpuState = g_qemu_rt_Info->get_initial_cpuState();
+    assert(os->size == init_cpuState.size());
+
+    ObjectState* wos = state->addressSpace.getWriteable(mo, os);
+    wos->write_n(0, init_cpuState);
+
+    state->crete_cpu_state = mo;
+}
+
+/* crete_qemu_tb_prologue:
+ * 1. synchronize memory
+ * 2. update the register value
+ * */
+void Executor::handleCreteQemuTbPrologue(klee::Executor* executor,
+        klee::ExecutionState* state,
+        klee::KInstruction* target,
+        std::vector<klee::ref<klee::Expr> > &args)
+{
+    assert(args.size() == 2);
+
+    ref<Expr> tb_index = args[0];
+    assert(isa<klee::ConstantExpr>(tb_index)
+            && "Input of tb_qemu_prelogue should be constant!\n");
+    ConstantExpr *ce = dyn_cast<ConstantExpr>(tb_index);
+    uint64_t tb_index_value = ce->getZExtValue();
+
+    CRETE_DBG
+    (cerr << dec << "===================================\n"
+            << "[tb prologue] tb_index_value = " << tb_index_value
+            << ", symbolic.size() = " << dec << state->symbolics.size() << endl;
+
+    CRETE_DBG_FLT(state->print_regs("_f", state->crete_cpu_state););
+    cerr << "===================================\n";
+    );
+
+    assert(state->m_qemu_tb_count == tb_index_value);
+
+    // set current_tb_pc
+    ref<Expr> tb_pc= args[1];
+    assert(isa<klee::ConstantExpr>(tb_pc)
+            && "Input of tb_qemu_prelogue should be constant!\n");
+    ConstantExpr *ce_tb_pc = dyn_cast<ConstantExpr>(tb_pc);
+    uint64_t tb_pc_value = ce_tb_pc->getZExtValue();
+    state->crete_current_tb_pc = tb_pc_value;
+
+    // synchronize memory
+    executor->crete_sync_memory(*state, tb_index_value);
+
+    //synchronize cpu regs
+    executor->crete_sync_cpu(*state, tb_index_value);
+
+    //debug
+    CRETE_DBG(
+    if(tb_index_value >= PRINT_TB_INDEX)
+    {
+        DebugPrintInstructions.push_back(STDERR_ALL);
+    });
+
+    CRETE_DBG_TA(
+    if(tb_index_value >= 1) {
+        if(!state->crete_tb_tainted){
+            fprintf(stderr, "[CRETE ERROR] CRETE_DBG_TA: tb-%lu is not tainted\n",
+                    tb_index_value-1);
+            state->crete_dbg_ta_fail = true;
+        }
+
+        state->crete_tb_tainted = false;
+    }
+    );
+
+    ++state->m_qemu_tb_count;
+}
+
+void Executor::handleCreteFinishReply(klee::Executor* executor,
+            klee::ExecutionState* state,
+            klee::KInstruction* target,
+            std::vector<klee::ref<klee::Expr> > &args)
+{
+    assert(args.size() == 1);
+
+    CRETE_CK(
+    ref<Expr> tb_index = args[0];
+    assert(isa<klee::ConstantExpr>(tb_index)
+            && "Input of tb_qemu_prelogue should be constant!\n");
+
+    ConstantExpr *ce = dyn_cast<ConstantExpr>(tb_index);
+    uint64_t tb_index_value = ce->getZExtValue();
+
+    const MemoryObject *mo = state->crete_cpu_state;
+    assert(mo);
+    const ObjectState* os = state->addressSpace.findObject(mo);
+    assert(os);
+
+    ObjectState* wos = state->addressSpace.getWriteable(mo, os);
+    g_qemu_rt_Info->cross_check_cpuState(*state, wos, tb_index_value);
+    );
+
+    CRETE_DBG_TA(assert(!state->crete_dbg_ta_fail););
+
+    executor->terminateState(*state);
+}
+
+
+void Executor::handleCreteMakeSymbolic(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args) {
+    ConcolicVariable cv = state->getFirstConcolic();
+    uint64_t addr = cv.m_guest_addr;
+    string name = cv.m_name;
+    uint64_t size = cv.m_data_size;
+    vector<uint8_t> concreteData = cv.m_concrete_value;
+    assert(concreteData.size() == cv.m_data_size);
+
+    // 1. createConoclicArray, which will create dummy mo for  state.symbolics
+    vector<ref<Expr> > symb = executor->crete_create_concolic_array(state, name, size, concreteData);
+
+    // 2. write symbolic values to existing mo
+    ObjectPair res;
+//    res = state->addressSpace.findObject(addr);
+    bool found = state->addressSpace.resolveOne(ConstantExpr::alloc(addr, Expr::Int64), res);
+    assert(found && "crete_make_symbolic is failed\n");
+
+    const MemoryObject *mo = res.first;
+    const ObjectState *os = res.second;
+    assert(mo && os);
+    assert(os->size == symb.size());
+
+    ObjectState* wos = state->addressSpace.getWriteable(mo, os);
+    wos->write_n(0, symb);
+
+    CRETE_DBG_TA(state->crete_tb_tainted = true;);
+}
+
+void Executor::handleCreteAssumeBegin(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args)
+{
+    // Disable forking to prevent generating test cases when handling crete_assume
+    assert(state->crete_fork_enabled && "[CRETE Error] fork should be always enabled "
+            "except handling crete_assume");
+
+    state->crete_fork_enabled = false;
+}
+
+void Executor::handleCreteAssume(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &arguments) {
+    assert(arguments.size()==1 && "[CRETE Error] invalid number of arguments to crete_assume");
+
+    ref<Expr> e = arguments[0];
+
+    if (e->getWidth() != Expr::Bool)
+      e = NeExpr::create(e, ConstantExpr::create(0, e->getWidth()));
+
+    bool res;
+    bool success = executor->solver->mustBeFalse(*state, e, res);
+    assert(success && "FIXME: Unhandled solver failure");
+    assert(!res && "[CRETE Error] crete_assume provably false!");
+
+    executor->addConstraint(*state, e);
+
+    // Enable forking after crete_assume is actually handled
+    assert(!state->crete_fork_enabled && "[CRETE Error] fork should be always disabled "
+            "when handling crete_assume");
+    state->crete_fork_enabled = true;
+}
+
+void Executor::handleCreteDebugCapture(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args)
+{
+    // Just need a stub. Do nothing. Everything is done on QEMU side.
+}
+
+/* Handler to replay generic interrupt:
+ *     1. Verify the interrupt info between klee and qemu are matched
+ *     2. Abort the execution of current TB and continue to execute the next instruction in main
+ * Original arguments of raise_exception:
+ *      int intno,
+ *      int is_int,
+ *      int error_code,
+ *      int next_eip_addend
+ * */
+void Executor::handleQemuRaiseInterrupt(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args) {
+    assert(args.size() == 4);
+
+    // Get the concrete value of each arguments in the current execution of klee
+    ref<Expr> exp_intno = args[0];
+    ref<Expr> exp_is_int= args[1];
+    ref<Expr> exp_error_code = args[2];
+    ref<Expr> exp_next_eip_addend = args[3];
+
+    assert(isa<klee::ConstantExpr>(exp_intno));
+    assert(isa<klee::ConstantExpr>(exp_is_int));
+    assert(isa<klee::ConstantExpr>(exp_error_code));
+    assert(isa<klee::ConstantExpr>(exp_next_eip_addend));
+
+    ConstantExpr *ce = dyn_cast<ConstantExpr>(exp_intno);
+    uint64_t klee_intno = ce->getZExtValue();
+
+    ce = dyn_cast<ConstantExpr>(exp_is_int);
+    uint64_t klee_is_int = ce->getZExtValue();
+
+    ce = dyn_cast<ConstantExpr>(exp_error_code);
+    uint64_t klee_error_code = ce->getZExtValue();
+
+    ce = dyn_cast<ConstantExpr>(exp_next_eip_addend);
+    uint64_t klee_next_eip_addend = ce->getZExtValue();
+
+    cout << "\t klee_intno = " << klee_intno
+            << ", klee_is_int = " << klee_is_int
+            << ", klee_error_code = " << klee_error_code
+            << ", klee_next_eip_addend = " << klee_next_eip_addend << endl;
+
+    // Get the dumped value of each arguments
+    // The value of state->m_qemu_tb_count was increased already in handleQemuTbPrelogue
+    uint64_t qemu_tb_index = state->m_qemu_tb_count - 1;
+    QemuInterruptInfo qemu_interrupt_info = g_qemu_rt_Info->get_qemuInterruptInfo(qemu_tb_index);
+
+    // 1. Verify the interrupt info between klee and qemu are matched
+    assert(klee_intno == (uint64_t)qemu_interrupt_info.m_intno);
+    assert(klee_is_int == (uint64_t)qemu_interrupt_info.m_is_int);
+    assert(klee_error_code == (uint64_t)qemu_interrupt_info.m_error_code);
+    assert(klee_next_eip_addend == (uint64_t)qemu_interrupt_info.m_next_eip_addend);
+
+    // 2. Abort the execution of current TB and continue to execute the next instruction in main
+    executor->crete_abortCurrentTBExecution(state);
+
+    assert(0 && "[CRETE Error] interrupt should be invisible for replay\n");
+}
+
+void Executor::handleQemuRaiseInterrupt2(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args) {
+    assert(args.size() == 5);
+
+    state->print_stack();
+    assert(0 && "[Crete Error] Interrupt should be invisible from klee side.\n");
+
+    // Get the concrete value of each arguments in the current execution of klee
+    ref<Expr> exp_intno = args[1];
+    ref<Expr> exp_is_int= args[2];
+    ref<Expr> exp_error_code = args[3];
+    ref<Expr> exp_next_eip_addend = args[4];
+
+    assert(isa<klee::ConstantExpr>(exp_intno));
+    assert(isa<klee::ConstantExpr>(exp_is_int));
+    assert(isa<klee::ConstantExpr>(exp_error_code));
+    assert(isa<klee::ConstantExpr>(exp_next_eip_addend));
+
+    ConstantExpr *ce = dyn_cast<ConstantExpr>(exp_intno);
+    uint64_t klee_intno = ce->getZExtValue();
+
+    ce = dyn_cast<ConstantExpr>(exp_is_int);
+    uint64_t klee_is_int = ce->getZExtValue();
+
+    ce = dyn_cast<ConstantExpr>(exp_error_code);
+    uint64_t klee_error_code = ce->getZExtValue();
+
+    ce = dyn_cast<ConstantExpr>(exp_next_eip_addend);
+    uint64_t klee_next_eip_addend = ce->getZExtValue();
+
+    cerr << "\t klee_intno = " << klee_intno
+            << ", klee_is_int = " << klee_is_int
+            << ", klee_error_code = " << klee_error_code
+            << ", klee_next_eip_addend = " << klee_next_eip_addend << endl;
+
+    // Get the dumped value of each arguments
+    // The value of state->m_qemu_tb_count was increased already in handleQemuTbPrelogue
+    uint64_t qemu_tb_index = state->m_qemu_tb_count - 1;
+    QemuInterruptInfo qemu_interrupt_info = g_qemu_rt_Info->get_qemuInterruptInfo(qemu_tb_index);
+
+    // 1. Verify the interrupt info between klee and qemu are matched
+    assert(klee_intno == (uint64_t)qemu_interrupt_info.m_intno);
+    assert(klee_is_int == (uint64_t)qemu_interrupt_info.m_is_int);
+    assert(klee_error_code == (uint64_t)qemu_interrupt_info.m_error_code);
+    assert(klee_next_eip_addend == (uint64_t)qemu_interrupt_info.m_next_eip_addend);
+
+    // 2. Abort the execution of current TB and continue to execute the next instruction in main
+    executor->crete_abortCurrentTBExecution(state);
+
+    assert(0 && "[CRETE Error] interrupt should be invisible for replay\n");
+}
+
+void Executor::handleCreteBcAssert(klee::Executor* executor,
+        klee::ExecutionState* state,
+        klee::KInstruction* target,
+        std::vector<klee::ref<klee::Expr> > &args) {
+//    cerr << "handleCreteBcAssert() is invoked\n";
+
+    assert(args.size() == 2);
+
+    ref<Expr> valid    = args[0];
+    ref<Expr> msg_addr = args[1];
+
+    assert(isa<klee::ConstantExpr>(valid));
+    assert(isa<klee::ConstantExpr>(msg_addr));
+
+    uint64_t valid_value = dyn_cast<ConstantExpr>(valid)->getZExtValue();
+    uint64_t msg_addr_value = dyn_cast<ConstantExpr>(msg_addr)->getZExtValue();
+
+    if(valid_value == 0) {
+        state->print_stack();
+        assert(0 && "[CRETE ERROR] crete_bc_assert() failed\n");
+    }
+}
+
+void Executor::handleCreteVerifyCpuStateOffset(klee::Executor* executor,
+        klee::ExecutionState* state,
+        klee::KInstruction* target,
+        std::vector<klee::ref<klee::Expr> > &args) {
+#if defined(CRETE_CROSS_CHECK)
+    assert(args.size() == 3);
+
+    ref<Expr> addr_name = args[0];
+    ref<Expr> offset = args[1];
+    ref<Expr> size = args[2];
+
+    assert(isa<klee::ConstantExpr>(addr_name));
+    assert(isa<klee::ConstantExpr>(offset));
+    assert(isa<klee::ConstantExpr>(size));
+
+    std::string str_name = crete_readStringAtAddress(*executor, *state, addr_name);
+
+    uint64_t offset_value = dyn_cast<ConstantExpr>(offset)->getZExtValue();
+    uint64_t size_value = dyn_cast<ConstantExpr>(size)->getZExtValue();
+
+    g_qemu_rt_Info->verify_CpuSate_offset(str_name, offset_value, size_value);
+#else
+    cerr << "[CRETE WARNING] CRETE_CROSS_CHECK is disabled on klee side while not being disabled from translator and maybe qemu\n";
+#endif
+}
+
+std::string Executor::crete_readStringAtAddress(Executor &executor,
+        ExecutionState &state, ref<Expr> addressExpr) {
+    ObjectPair op;
+    addressExpr = executor.toUnique(state, addressExpr);
+    ref<ConstantExpr> address = cast<ConstantExpr>(addressExpr);
+    if (!state.addressSpace.resolveOne(address, op))
+        assert(0 && "XXX out of bounds / multiple resolution unhandled");
+    bool res;
+    assert(executor.solver->mustBeTrue(state,
+            EqExpr::create(address,
+                    op.first->getBaseExpr()),
+                    res) &&
+            res &&
+            "XXX interior pointer unhandled");
+    const MemoryObject *mo = op.first;
+    const ObjectState *os = op.second;
+
+    char *buf = new char[mo->size];
+
+    unsigned i;
+    for (i = 0; i < mo->size - 1; i++) {
+        ref<Expr> cur = os->read8(i);
+        cur = executor.toUnique(state, cur);
+        assert(isa<ConstantExpr>(cur) &&
+                "hit symbolic char while reading concrete string");
+        buf[i] = cast<ConstantExpr>(cur)->getZExtValue(8);
+    }
+    buf[i] = 0;
+
+    std::string result(buf);
+    delete[] buf;
+    return result;
+}
+#endif // CRETE_CONFIG

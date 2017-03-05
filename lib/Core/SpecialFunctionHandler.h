@@ -138,6 +138,27 @@ namespace klee {
     HANDLER(handleSubOverflow);
     HANDLER(handleDivRemOverflow);
 #undef HANDLER
+
+#if defined(CRETE_CONFIG)
+  public:
+    typedef void (*FunctionHandler)(Executor* executor,
+                                    ExecutionState *state,
+                                    KInstruction *target,
+                                    std::vector<ref<Expr> >
+                                    &arguments);
+
+    typedef std::map<const llvm::Function*,
+            std::pair<FunctionHandler,bool> > uhandlers_ty;
+
+    /// Add user handler function
+    void addUHandler(llvm::Function* f, FunctionHandler handler);
+    std::string readStringAtAddress2(ExecutionState &state, ref<Expr> address);
+
+private:
+    /* uhandlers are user defined handlers that can be added
+       or removed during symbolic execution. */
+    uhandlers_ty uhandlers;
+#endif // CRETE_CONFIG
   };
 } // End klee namespace
 

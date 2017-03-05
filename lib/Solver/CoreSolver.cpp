@@ -65,7 +65,9 @@ Solver *createCoreSolver(CoreSolverType cst) {
   switch (cst) {
   case STP_SOLVER:
 #ifdef ENABLE_STP
+#if !defined(CRETE_CONFIG)
     llvm::errs() << "Using STP solver backend\n";
+#endif
     return new STPSolver(UseForkedCoreSolver, CoreSolverOptimizeDivides);
 #else
     llvm::errs() << "Not compiled with STP support\n";

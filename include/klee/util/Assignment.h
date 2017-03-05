@@ -50,6 +50,12 @@ namespace klee {
     template<typename InputIterator>
     bool satisfies(InputIterator begin, InputIterator end);
     void dump();
+
+#if defined(CRETE_CONFIG)
+    inline void add(const Array *object, std::vector<unsigned char> value) {
+        bindings.insert(std::make_pair(object, value));
+    }
+#endif //CRETE_CONFIG
   };
   
   class AssignmentEvaluator : public ExprEvaluator {
