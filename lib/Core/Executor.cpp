@@ -4150,9 +4150,11 @@ void Executor::crete_preprocess_memory_operation(ExecutionState &state,
     ConstantExpr *temp_ce =  dyn_cast<ConstantExpr>(address);
     uint64_t temp_addr = temp_ce->getZExtValue();
 
-    bool is_overlapped =  memory->isOverlappedMO(temp_addr, bytes);
-    if(is_overlapped){
-        crete_merge_overlapped_mos(state, temp_addr, bytes, isWrite);
+    std::vector<const MemoryObject *> overlapped_mos =
+            state.addressSpace.getOverlapObjects(temp_addr, bytes);
+
+    if(!overlapped_mos.empty()){
+        crete_merge_overlapped_mos(state, overlapped_mos, temp_addr, bytes, isWrite);
     } else {
         if(!isWrite) {
             CRETE_DBG(
@@ -4165,7 +4167,7 @@ void Executor::crete_preprocess_memory_operation(ExecutionState &state,
         }
 
         // If no overlapped existing mo is found, just create a new mo for this address and size
-        MemoryObject *temp_mo = memory->allocateFixed(temp_addr, bytes, 0, true);
+        MemoryObject *temp_mo = memory->allocateFixed(temp_addr, bytes, 0, true, true);
         if(temp_mo == NULL) {
             state.print_stack();
             assert(0);
@@ -4195,12 +4197,9 @@ bool Executor::crete_manual_disable_fork(const ExecutionState &state)
  * return the merged MO
  * For read memory operation, existing MOs must cover all bytes of the given MO
  * */
-MemoryObject *Executor::crete_merge_overlapped_mos(ExecutionState &state,
+const MemoryObject *Executor::crete_merge_overlapped_mos(ExecutionState &state,
+        const std::vector<const MemoryObject *>& overlapped_mos,
         uint64_t mo_start_addr, uint64_t mo_size, bool isWrite){
-    //0. get the overlapped MOs (could be multiple ones)
-    std::vector<MemoryObject *> overlapped_mos = memory->findOverlapObjects(mo_start_addr, mo_size);
-    assert(!overlapped_mos.empty() && "No overlapped MO for the given MO.\n");
-
     //The only overlapped MO covers the given MO, just return it.
     if(overlapped_mos.front()->address <= mo_start_addr &&
             (overlapped_mos.front()->address + overlapped_mos.front()->size)
@@ -4210,8 +4209,8 @@ MemoryObject *Executor::crete_merge_overlapped_mos(ExecutionState &state,
     }
 
     // Put overlapped MOs into a sorted map, and assure they are not from ExecutionState::symbolics
-    std::map<uint64_t,  MemoryObject *> ordered_overlapped_mos;
-    for(std::vector<MemoryObject *>::iterator it = overlapped_mos.begin();
+    std::map<uint64_t, const MemoryObject *> ordered_overlapped_mos;
+    for(std::vector<const MemoryObject *>::const_iterator it = overlapped_mos.begin();
                     it != overlapped_mos.end(); ++it) {
         assert(!state.isSymbolics(*it) &&
                 "[CRETE ERROR] The given MO is overlapped with symbolics MO\n");
@@ -4233,9 +4232,9 @@ MemoryObject *Executor::crete_merge_overlapped_mos(ExecutionState &state,
     std::vector< ref<Expr> > old_os_value;
     uint64_t previous_mo_end_addr = ordered_overlapped_mos.begin()->second->address;
 
-    for(std::map<uint64_t, MemoryObject*>::iterator it = ordered_overlapped_mos.begin();
+    for(std::map<uint64_t, const MemoryObject*>::iterator it = ordered_overlapped_mos.begin();
             it != ordered_overlapped_mos.end(); ++it) {
-        MemoryObject *temp_mo = it->second;
+        const MemoryObject *temp_mo = it->second;
 
         if(temp_mo->address != previous_mo_end_addr) {
             if(isWrite){
@@ -4357,7 +4356,7 @@ void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
                 );
             }
         } else {
-            MemoryObject *temp_mo = memory->allocateFixed(addr, 1, 0, true);
+            MemoryObject *temp_mo = memory->allocateFixed(addr, 1, 0, true, true);
             if(temp_mo == NULL) {
                 state.print_stack();
                 assert(0);

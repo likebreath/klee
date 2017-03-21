@@ -47,7 +47,8 @@ public:
 #else
   MemoryObject *allocateFixed(uint64_t address, uint64_t size,
                               const llvm::Value *allocSite,
-                              bool crete_call = false);
+                              bool crete_call = false,
+                              bool skip_check = false);
 #endif
   void deallocate(const MemoryObject *mo);
   void markFreed(MemoryObject *mo);
@@ -59,12 +60,6 @@ public:
   size_t getUsedDeterministicSize();
 
 #if defined(CRETE_CONFIG)
-  public:
-    // TODO: xxx move them to class AddressSpace?
-    MemoryObject *findObject(uint64_t address) const;
-    std::vector<MemoryObject *> findOverlapObjects(uint64_t address, uint64_t size) const;
-    bool isOverlappedMO(uint64_t address, uint64_t size) const;
-
   private:
     uint64_t next_alloc_address;
 

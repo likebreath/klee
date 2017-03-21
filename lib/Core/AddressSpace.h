@@ -125,6 +125,12 @@ namespace klee {
     /// \retval true The copy succeeded. 
     /// \retval false The copy failed because a read-only object was modified.
     bool copyInConcretes();
+
+#if defined(CRETE_CONFIG)
+  public:
+    std::vector<const MemoryObject *> getOverlapObjects(uint64_t address,
+            uint64_t size) const;
+#endif
   };
 } // End klee namespace
 
