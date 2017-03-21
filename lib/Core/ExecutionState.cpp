@@ -455,7 +455,7 @@ void ExecutionState::printCreteConolic(){
     }
 }
 
-bool ExecutionState::isSymbolics(MemoryObject *mo) {
+bool ExecutionState::isSymbolics(const MemoryObject *mo) {
     bool ret = false;
     for (unsigned int i=0; i<symbolics.size(); i++) {
         if(symbolics[i].first == mo) {

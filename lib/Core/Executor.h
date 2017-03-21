@@ -540,7 +540,8 @@ private:
 
 private:
   // crete internal functions
-  MemoryObject *crete_merge_overlapped_mos(ExecutionState &state,
+  const MemoryObject *crete_merge_overlapped_mos(ExecutionState &state,
+          const std::vector<const MemoryObject *>& overlapped_mos,
           uint64_t mo_start_addr, uint64_t mo_size, bool isWrite = true);
 
   void crete_sync_memory(ExecutionState &state, uint64_t tb_index);

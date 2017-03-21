@@ -207,7 +207,7 @@ public:
   ConcolicVariable getFirstConcolic();
   void printCreteConolic();
 
-  bool isSymbolics(MemoryObject *mo);
+  bool isSymbolics(const MemoryObject *mo);
   ref<Expr> getConcreteExpr(ref<Expr> e);
 
   std::string crete_get_unique_name(const std::string name);

@@ -335,3 +335,32 @@ bool MemoryObjectLT::operator()(const MemoryObject *a, const MemoryObject *b) co
   return a->address < b->address;
 }
 
+#if defined(CRETE_CONFIG)
+std::vector<const MemoryObject *>  AddressSpace::getOverlapObjects(uint64_t address,
+        uint64_t size) const {
+    std::vector<const MemoryObject *> ret;
+
+    for(uint64_t check_addr = address; check_addr < address + size;)
+    {
+        MemoryObject hack(check_addr);
+        if (const MemoryMap::value_type *res = objects.lookup_previous(&hack))
+        {
+            const MemoryObject *mo = res->first;
+            // Check if the provided address is between start and end of the object
+            // [mo->address, mo->address + mo->size) or the object is a 0-sized object.
+            // If yes, the current byte is overlapped with existing mo
+            if (check_addr - mo->address < mo->size)
+            {
+                ret.push_back(mo);
+                check_addr = mo->address + mo->size;
+            } else {
+                ++check_addr;
+            }
+        } else {
+            ++check_addr;
+        }
+    }
+
+    return ret;
+}
+#endif
