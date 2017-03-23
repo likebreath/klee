@@ -523,6 +523,23 @@ void ExecutionState::print_regs(std::string name, const MemoryObject *crete_cpuS
     }
 }
 
+void ExecutionState::crete_assert_concolic_replay() const
+{
+    for(ConstraintManager::constraint_iterator it = constraints.begin();
+            it != constraints.end(); ++it) {
+        ref<Expr> value = concolics.evaluate(*it);
+        assert(isa<klee::ConstantExpr>(value));
+        if(!dyn_cast<ConstantExpr>(value)->getZExtValue())
+        {
+            fprintf(stderr, "[CRETE ERROR] crete_assert_concolic_replay(): tb-%lu\n"
+                    "initial value violates the current constraints. Current expr:\n", m_qemu_tb_count);
+            (*it)->dump();
+
+            print_stack();
+            assert(0);
+        }
+    }
+}
 std::string ExecutionState::crete_get_unique_name(const std::string name)
 {
     unsigned id = 0;

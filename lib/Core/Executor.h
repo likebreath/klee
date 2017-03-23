@@ -625,6 +625,10 @@ private:
 
   static std::string crete_readStringAtAddress(Executor &executor,
           ExecutionState &state, ref<Expr> addressExpr);
+
+  void crete_assert_concolic_tc(const ExecutionState &state,
+          const std::vector<std::vector<unsigned char> > &symbolic_res,
+          const std::vector<std::vector<unsigned char> > &concolic_res) const;
 #endif // CRETE_CONFIG
 ======= end
 };

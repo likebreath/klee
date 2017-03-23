@@ -4289,6 +4289,11 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
         }
     }
 
+    CRETE_DBG_CTG(
+    const ExecutionState& exist_state = branches.first?(*branches.first):(*branches.second);
+    exist_state.crete_assert_concolic_replay();
+    );
+
     return branches;
 }
 
@@ -4612,6 +4617,49 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     }
 
     return true;
+}
+
+void Executor::crete_assert_concolic_tc(const ExecutionState &state,
+        const std::vector<std::vector<unsigned char> > &symbolic_res,
+        const std::vector<std::vector<unsigned char> > &concolic_res) const
+{
+    assert(state.symbolics.size() == symbolic_res.size());
+    assert(state.symbolics.size() == concolic_res.size());
+
+    Assignment symbolic_binds;
+    Assignment concolic_binds;
+    for(uint64_t i = 0; i < state.symbolics.size(); ++i)
+    {
+        symbolic_binds.add(state.symbolics[i].second, symbolic_res[i]);
+        concolic_binds.add(state.symbolics[i].second, concolic_res[i]);
+    }
+
+    for(ConstraintManager::constraint_iterator it = state.constraints.begin();
+            it != state.constraints.end(); ++it) {
+        ref<Expr> value = symbolic_binds.evaluate(*it);
+        assert(isa<klee::ConstantExpr>(value));
+        if(!dyn_cast<ConstantExpr>(value)->getZExtValue())
+        {
+            fprintf(stderr, "[CRETE ERROR] symbolic test case violates the constraints.\n"
+                    "Current expr:\n");
+            (*it)->dump();
+
+            state.print_stack();
+            assert(0);
+        }
+
+        value = concolic_binds.evaluate(*it);
+        assert(isa<klee::ConstantExpr>(value));
+        if(!dyn_cast<ConstantExpr>(value)->getZExtValue())
+        {
+            fprintf(stderr, "[CRETE ERROR] concolic test case violates the constraints\n"
+                    "Current expr:\n");
+            (*it)->dump();
+
+            state.print_stack();
+            assert(0);
+        }
+    }
 }
 
 std::vector<ref<Expr> > Executor::crete_create_concolic_array(

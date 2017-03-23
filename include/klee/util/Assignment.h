@@ -45,7 +45,11 @@ namespace klee {
     }
     
     ref<Expr> evaluate(const Array *mo, unsigned index) const;
+#if !defined(CRETE_CONFIG)
     ref<Expr> evaluate(ref<Expr> e);
+#else
+    ref<Expr> evaluate(ref<Expr> e) const;
+#endif
     void createConstraintsFromAssignment(std::vector<ref<Expr> > &out) const;
 
     template<typename InputIterator>
@@ -89,7 +93,11 @@ namespace klee {
     }
   }
 
-  inline ref<Expr> Assignment::evaluate(ref<Expr> e) { 
+#if !defined(CRETE_CONFIG)
+  inline ref<Expr> Assignment::evaluate(ref<Expr> e) {
+#else
+  inline ref<Expr> Assignment::evaluate(ref<Expr> e) const {
+#endif
     AssignmentEvaluator v(*this);
     return v.visit(e); 
   }

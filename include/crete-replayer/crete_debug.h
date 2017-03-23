@@ -13,6 +13,8 @@
 
 //#define CRETE_DEBUG_TRACE_TAG
 
+#define CRETE_DEBUG_CONCOLIC_TG
+
 #define PRINT_TB_INDEX 0xfffffff
 
 #ifdef CRETE_DEBUG_GENERAL
@@ -55,6 +57,12 @@
 #define CRETE_DBG_TT(x) do { x } while(0)
 #else
 #define CRETE_DBG_TT(x) do { } while(0)
+#endif
+
+#ifdef CRETE_DEBUG_CONCOLIC_TG
+#define CRETE_DBG_CTG(x) do { x } while(0)
+#else
+#define CRETE_DBG_CTG(x) do { } while(0)
 #endif
 
 #include <crete/trace_tag.h>

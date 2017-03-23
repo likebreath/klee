@@ -231,6 +231,8 @@ private:
 public:
   void print_stack() const;
   void print_regs(std::string name, const MemoryObject *crete_cpuState);
+
+  void crete_assert_concolic_replay() const;
 #endif //CRETE_CONFIG
 };
 }
