@@ -73,12 +73,20 @@ namespace {
 
   cl::opt<bool>
   OutputStats("output-stats",
+#if defined(CRETE_CONFIG)
+              cl::init(false),
+#else
               cl::init(true),
+#endif
 	      cl::desc("Write running stats trace file (default=on)"));
 
   cl::opt<bool>
   OutputIStats("output-istats",
-	       cl::init(true),
+#if defined(CRETE_CONFIG)
+              cl::init(false),
+#else
+              cl::init(true),
+#endif
                cl::desc("Write instruction level statistics in callgrind format (default=on)"));
 
   cl::opt<double>

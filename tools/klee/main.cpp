@@ -339,6 +339,7 @@ KleeHandler::KleeHandler(int argc, char **argv)
 
   klee_message("output directory is \"%s\"", m_outputDirectory.c_str());
 
+#if !defined(CRETE_CONFIG)
   // open warnings.txt
   std::string file_path = getOutputFilename("warnings.txt");
   if ((klee_warning_file = fopen(file_path.c_str(), "w")) == NULL)
@@ -351,6 +352,22 @@ KleeHandler::KleeHandler(int argc, char **argv)
 
   // open info
   m_infoFile = openOutputFile("info");
+#else
+  klee_warning_file = stderr;
+  klee_message_file = stderr;
+
+  std::string Error;
+  m_infoFile = new llvm::raw_fd_ostream("/dev/null", Error);
+
+  if (!Error.empty()) {
+    klee_warning("error opening file \"/dev/null\".  KLEE may have run out of file "
+               "descriptors: try to increase the maximum number of open file "
+               "descriptors by using ulimit (%s).",
+               Error.c_str());
+    delete m_infoFile;
+    m_infoFile = NULL;
+  }
+#endif
 }
 
 KleeHandler::~KleeHandler() {

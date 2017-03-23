@@ -4267,12 +4267,10 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
 
     if(trueState && falseState){
         if (condition_value->isTrue()) {
-            terminateStateEarly(*falseState,
-                    "Terminate the falseState to generate a test case.\n");
+            terminateStateOnExit(*falseState);
             branches.second = NULL;
         } else {
-            terminateStateEarly(*trueState,
-                    "Terminate the trueState to generate a test case.\n");
+            terminateStateOnExit(*trueState);
             branches.first= NULL;
         }
     } else if (!trueState && !falseState) {

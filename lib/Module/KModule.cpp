@@ -415,6 +415,7 @@ void KModule::prepare(const Interpreter::ModuleOptions &opts,
   if (f && f->use_empty()) f->eraseFromParent();
 #endif
 
+#if !defined(CRETE_CONFIG)
   // Write out the .ll assembly file. We truncate long lines to work
   // around a kcachegrind parsing bug (it puts them on new lines), so
   // that source browsing works.
@@ -458,6 +459,7 @@ void KModule::prepare(const Interpreter::ModuleOptions &opts,
     WriteBitcodeToFile(module, *f);
     delete f;
   }
+#endif // !defined(CRETE_CONFIG)
 
   kleeMergeFn = module->getFunction("klee_merge");
 
