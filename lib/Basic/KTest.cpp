@@ -260,40 +260,6 @@ void kTest_free(KTest *bo) {
 #if defined(CRETE_CONFIG)
 int crete_kTest_toFile(KTest *bo, const char *path,
         const void *trace_tag_explored) {
-  FILE *f = fopen(path, "wb");
-  unsigned i;
-
-  if (!f)
-    goto error;
-  if (fwrite(KTEST_MAGIC, strlen(KTEST_MAGIC), 1, f)!=1)
-    goto error;
-  if (!write_uint32(f, KTEST_VERSION))
-    goto error;
-
-  if (!write_uint32(f, bo->numArgs))
-    goto error;
-  for (i=0; i<bo->numArgs; i++) {
-    if (!write_string(f, bo->args[i]))
-      goto error;
-  }
-
-  if (!write_uint32(f, bo->symArgvs))
-    goto error;
-  if (!write_uint32(f, bo->symArgvLen))
-    goto error;
-
-  if (!write_uint32(f, bo->numObjects))
-    goto error;
-  for (i=0; i<bo->numObjects; i++) {
-    KTestObject *o = &bo->objects[i];
-    if (!write_string(f, o->name))
-      goto error;
-    if (!write_uint32(f, o->numBytes))
-      goto error;
-    if (fwrite(o->bytes, o->numBytes, 1, f)!=1)
-      goto error;
-  }
-
   { // Special local scope required b/c goto use.
       static uint64_t g_test_case_count = 0;
       assert(trace_tag_explored != NULL);
@@ -316,7 +282,7 @@ int crete_kTest_toFile(KTest *bo, const char *path,
 
       crete::TestCase ctc;
 
-      for (i = 0; i < bo->numObjects; i++) {
+      for (uint64_t i = 0; i < bo->numObjects; i++) {
           KTestObject& obj = bo->objects[i];
 
           crete::TestCaseElement elem;
@@ -347,12 +313,6 @@ int crete_kTest_toFile(KTest *bo, const char *path,
       write_serialized(ktest_pool_file, ctc);
   }
 
-  fclose(f);
-
   return 1;
- error:
-  if (f) fclose(f);
-
-  return 0;
 }
 #endif // CRETE_CONFIG
