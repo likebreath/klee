@@ -3852,6 +3852,47 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     return false;
   }
   
+#if defined(CRETE_CONFIG)
+  // concolic test case generation
+  assert(values.size() == state.symbolics.size());
+  const constraint_dependency_ty&  complete_deps= state.constraints.get_constraint_dependency().get();
+
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
+//  static uint64_t tc_num = 1;
+//  cerr << "\n=== tc-" << tc_num++ << "===\n";
+//  cerr << "complete_deps: ";
+//  state.constraints.get_constraint_dependency().print_deps();
+
+  vector< std::vector<unsigned char> > sym_values(values);
+#endif
+
+  for (unsigned i = 0; i != state.symbolics.size(); ++i)
+  {
+      std::vector<unsigned char>& sym_solution_value =  values[i];
+
+      const Array* sym_arr = state.symbolics[i].second;
+      Assignment::bindings_ty::const_iterator it_concolic = state.concolics.bindings.find(sym_arr);
+      assert(it_concolic != state.concolics.bindings.end());
+      const std::vector<uint8_t>& initial_value = it_concolic->second;
+
+      assert(sym_arr->size == initial_value.size());
+      assert(initial_value.size() == sym_solution_value.size());
+
+      for(uint64_t j = 0; j < sym_arr->size; ++j)
+      {
+          if(complete_deps.find(std::make_pair(sym_arr, j)) == complete_deps.end())
+          {
+              assert(sym_solution_value[j] == 0 &&
+                      "[CRETE Error] default value for non-constrained symbolic byte should be 0\n");
+
+              sym_solution_value[j] = initial_value[j];;
+          }
+      }
+  }
+
+  CRETE_DBG_CTG(crete_assert_concolic_tc(state, sym_values, values););
+#endif // defined(CRETE_CONFIG)
+
   for (unsigned i = 0; i != state.symbolics.size(); ++i)
     res.push_back(std::make_pair(state.symbolics[i].first->name, values[i]));
   return true;
@@ -4107,8 +4148,8 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
     }
 
     CRETE_DBG_CTG(
-    const ExecutionState& exist_state = branches.first?(*branches.first):(*branches.second);
-    exist_state.crete_assert_concolic_replay();
+//    const ExecutionState& exist_state = branches.first?(*branches.first):(*branches.second);
+//    exist_state.crete_assert_concolic_replay();
     );
 
     return branches;
@@ -4425,15 +4466,14 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
                                    std::vector<unsigned char> > >
                                    &res,
                                    std::vector<uint64_t>& addresses) {
-    // UPGRADE: xxx
-    getSymbolicSolution(state, res);
+    bool success = getSymbolicSolution(state, res);
 
     for (unsigned i = 0; i != state.symbolics.size(); ++i)
     {
         addresses.push_back(state.symbolics[i].first->address);
     }
 
-    return true;
+    return success;
 }
 
 void Executor::crete_assert_concolic_tc(const ExecutionState &state,
@@ -4484,11 +4524,11 @@ std::vector<ref<Expr> > Executor::crete_create_concolic_array(
         const std::string& name,
         uint64_t size,
         std::vector<uint8_t> &concreteBuffer) {
+    assert(size == concreteBuffer.size());
+
     std::string sname = state->crete_get_unique_name(name);
 
-    // UPGRADE: xxx
     const Array *array = arrayCache.CreateArray(sname, size);
-//    const Array *array = new Array(sname, size);
 
     UpdateList ul(array, 0);
 
@@ -4506,7 +4546,6 @@ std::vector<ref<Expr> > Executor::crete_create_concolic_array(
     MemoryObject *mo = new MemoryObject(0, size, false, false, false, NULL, NULL);
     mo->setName(sname);
 
-    //bindObjectInState(state, mo, false, array);
     ++mo->refCount;
     state->symbolics.push_back(std::make_pair(mo, array));
 
@@ -4661,6 +4700,7 @@ void Executor::handleCreteMakeSymbolic(klee::Executor* executor,
     const MemoryObject *mo = res.first;
     const ObjectState *os = res.second;
     assert(mo && os);
+    assert(mo->address == addr);
     assert(os->size == symb.size());
 
     ObjectState* wos = state->addressSpace.getWriteable(mo, os);
