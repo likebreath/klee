@@ -168,4 +168,61 @@ void ConstraintManager::addConstraintInternal(ref<Expr> e) {
 void ConstraintManager::addConstraint(ref<Expr> e) {
   e = simplifyExpr(e);
   addConstraintInternal(e);
+
+#if defined(CRETE_CONFIG)
+  m_complete_deps.add_dep(e);
+#endif
 }
+
+#if defined(CRETE_CONFIG)
+CreteConstraintDependency::CreteConstraintDependency(ref<Expr> e)
+{
+    assert(m_scaned_sub_exprs.empty());
+    add_dep_internal(e, 1);
+}
+
+const constraint_dependency_ty& CreteConstraintDependency::get() const
+{
+    return m_deps;
+}
+
+void CreteConstraintDependency::add_dep(ref<Expr> e)
+{
+    m_scaned_sub_exprs.clear();
+    add_dep_internal(e, 1);
+}
+
+void CreteConstraintDependency::add_dep_internal(ref<Expr> e, uint64_t caller_number)
+{
+    if (!isa<ConstantExpr>(e) && m_scaned_sub_exprs.insert(e).second)
+    {
+        if (const ReadExpr *re = dyn_cast<ReadExpr>(e)) {
+            assert(isa<ConstantExpr>(re->index));
+            assert(re->updates.head == NULL &&
+                    "[CRETE Error] There should be no updatelist for symbolic array, as "
+                    "there is no write to symbolic array with symbolic index.\n");
+            assert(re->updates.root != NULL &&
+                    "[CRETE Error] All ReadExpr should read symbolic array.\n");
+
+            uint64_t index= cast<ConstantExpr>(re->index)->getZExtValue();
+            const Array* sym_array = re->updates.root;
+            m_deps.insert(std::make_pair(sym_array, index));
+        } else {
+            for (unsigned i=0; i<e->getNumKids(); i++)
+            {
+                add_dep_internal(e->getKid(i), caller_number+1);
+            }
+        }
+    }
+}
+
+#include <stdio.h>
+void CreteConstraintDependency::print_deps() const
+{
+    fprintf(stderr, "constraint deps size: %lu\n", m_deps.size());
+    for(constraint_dependency_ty::const_iterator it = m_deps.begin();
+            it != m_deps.end(); ++it) {
+        fprintf(stderr, "%s[%lu]\n", it->first->getName().c_str(), it->second);
+    }
+}
+#endif

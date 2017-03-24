@@ -12,6 +12,10 @@
 
 #include "klee/Expr.h"
 
+#if defined(CRETE_CONFIG)
+#include <boost/unordered_set.hpp>
+#endif
+
 // FIXME: Currently we use ConstraintManager for two things: to pass
 // sets of constraints around, and to optimize constraints. We should
 // move the first usage into a separate data structure
@@ -20,6 +24,29 @@ namespace klee {
 
 class ExprVisitor;
   
+#if defined(CRETE_CONFIG)
+// <symbolic-array, index-within-array>
+typedef boost::unordered_set<std::pair<const Array*, uint64_t> > constraint_dependency_ty;
+
+class CreteConstraintDependency
+{
+public:
+    CreteConstraintDependency(ref<Expr> e);
+    CreteConstraintDependency() {}
+
+    void add_dep(ref<Expr> e);
+
+    const constraint_dependency_ty& get() const;
+    void print_deps() const;
+
+private:
+    std::set< ref<Expr> > m_scaned_sub_exprs;
+    constraint_dependency_ty m_deps;
+
+    void add_dep_internal(ref<Expr> e, uint64_t caller_number);
+};
+#endif //defined(CRETE_CONFIG)
+
 class ConstraintManager {
 public:
   typedef std::vector< ref<Expr> > constraints_ty;
@@ -33,7 +60,11 @@ public:
   ConstraintManager(const std::vector< ref<Expr> > &_constraints) :
     constraints(_constraints) {}
 
-  ConstraintManager(const ConstraintManager &cs) : constraints(cs.constraints) {}
+  ConstraintManager(const ConstraintManager &cs) : constraints(cs.constraints)
+#if defined(CRETE_CONFIG)
+  ,m_complete_deps(cs.m_complete_deps)
+#endif
+  {}
 
   typedef std::vector< ref<Expr> >::const_iterator constraint_iterator;
 
@@ -72,6 +103,17 @@ private:
   bool rewriteConstraints(ExprVisitor &visitor);
 
   void addConstraintInternal(ref<Expr> e);
+
+#if defined(CRETE_CONFIG)
+public:
+  const CreteConstraintDependency& get_constraint_dependency() const
+  {
+      return m_complete_deps;
+  }
+
+private:
+  CreteConstraintDependency m_complete_deps;
+#endif
 };
 
 }
