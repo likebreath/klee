@@ -551,6 +551,8 @@ private:
                                    std::vector<unsigned char> > >
                                    &res,
                                    std::vector<uint64_t>& addresses);
+  virtual bool crete_getConcolicSolution(const ExecutionState &state,
+                                         std::vector<crete::TestCasePatchElement_ty>& tcp_elems);
 
   std::vector<ref<Expr> > crete_create_concolic_array(
           ExecutionState* state,

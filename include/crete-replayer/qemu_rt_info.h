@@ -173,6 +173,7 @@ public:
 	void get_trace_tag_for_tc(uint64_t tt_tag_index,
 	        crete::creteTraceTag_ty &tt_tag_for_tc,
 	        vector<bool>& current_node_br_taken_semi_explored) const;
+	uint64_t get_tt_node_br_num(uint64_t tt_tag_index) const;
 
 private:
 	//TODO: xxx not a good solution
