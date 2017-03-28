@@ -27,6 +27,7 @@
 
 #include "crete-replayer/qemu_rt_info.h"
 #include "crete/trace_tag.h"
+#include "crete/test_case.h"
 
 #include <deque>
 #endif //CRETE_CONFIG
@@ -40,10 +41,6 @@ struct KInstruction;
 class MemoryObject;
 class PTreeNode;
 struct InstructionInfo;
-
-#if defined(CRETE_CONFIG)
-//typedef std::pair<MemoryObject*, ObjectState*> modi_objectPair;
-#endif //CRETE_CONFIG
 
 llvm::raw_ostream &operator<<(llvm::raw_ostream &os, const MemoryMap &mm);
 
@@ -215,6 +212,10 @@ public:
   // trace tag
   void check_trace_tag(bool &branch_taken, bool &explored_node);
   crete::creteTraceTag_ty get_trace_tag_for_tc() const;
+
+  // concolic test generation
+  uint64_t get_symbolics_index(const Array* sym_array) const;
+  void get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty& tcp_tt) const;
 
 private:
   std::deque<ConcolicVariable > creteConcolicsQueue;

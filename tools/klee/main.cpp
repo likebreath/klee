@@ -426,6 +426,46 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
   return openOutputFile(getTestFilename(suffix, id));
 }
 
+#if defined(CRETE_CONFIG)
+#include <crete/test_case.h>
+#include <crete/trace_tag.h>
+
+#include "crete-replayer/crete_debug.h"
+#include "crete-replayer/qemu_rt_info.h"
+
+#include <string>
+#include <sstream>
+#include <sys/stat.h>
+#include <fstream>
+
+int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty tcp_tt,
+        const std::vector<crete::TestCasePatchElement_ty>& tcp_elems)
+{
+    static uint64_t g_test_case_count = 0;
+
+    crete::TestCase ctc(tcp_tt, tcp_elems);
+
+    const char* ktest_pool_dir = "testpatch_pool";
+
+    struct stat sb;
+    if(!(stat(ktest_pool_dir, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?
+        if(mkdir(ktest_pool_dir, 0777) == -1) // create dir.
+            assert(0 && "can't create ktest_pool directory");
+
+    std::stringstream kt_file_name;
+    kt_file_name << ktest_pool_dir;
+    kt_file_name << "/";
+    kt_file_name << ++g_test_case_count;
+    kt_file_name << ".bin";
+
+    std::ofstream ktest_pool_file(kt_file_name.str().c_str(), std::ios_base::out | std::ios_base::binary);
+    assert(ktest_pool_file);
+    write_serialized(ktest_pool_file, ctc);
+
+    return 1;
+}
+#endif // CRETE_CONFIG
+
 
 /* Outputs all files (.ktest, .kquery, .cov etc.) describing a test case */
 void KleeHandler::processTestCase(const ExecutionState &state,
@@ -437,6 +477,29 @@ void KleeHandler::processTestCase(const ExecutionState &state,
   }
 
   if (!NoOutput) {
+#if defined(CRETE_CONFIG)
+    std::vector<crete::TestCasePatchElement_ty> tcp_elems;
+    bool concolic_success = m_interpreter->crete_getConcolicSolution(state, tcp_elems);
+
+    crete::TestCasePatchTraceTag_ty tcp_tt;
+    state.get_trace_tag_patch_for_tc(tcp_tt);
+
+//    double start_time = util::getWallTime();
+//    unsigned id = ++m_testIndex;
+
+    if(concolic_success)
+    {
+        if (!crete_concolicTest_tofile(tcp_tt, tcp_elems))
+        {
+            klee_warning("unable to write output test case, losing it");
+        }
+
+        CRETE_DBG(std::cerr << std::dec << "tc-" << m_testIndex << ", success = " << success << std::endl;);
+    } else {
+        klee_warning("unable to get symbolic solution, losing test case");
+    }
+#endif
+
     std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
 
 #if !defined(CRETE_CONFIG)

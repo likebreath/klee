@@ -16,6 +16,8 @@
 
 #if defined(CRETE_CONFIG)
 #include <stdint.h>
+#include <crete/trace_tag.h>
+#include <crete/test_case.h>
 #endif // CRETE_CONFIG
 
 struct KTest;
@@ -167,6 +169,8 @@ public:
                                    std::vector<unsigned char> > >
                                    &res,
                                    std::vector<uint64_t>& addresses) = 0;
+  virtual bool crete_getConcolicSolution(const ExecutionState &state,
+                                         std::vector<crete::TestCasePatchElement_ty>& tcp_elems);
 #endif // CRETE_CONFIG
 
   virtual void getCoveredLines(const ExecutionState &state,

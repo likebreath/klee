@@ -647,4 +647,41 @@ crete::creteTraceTag_ty ExecutionState::get_trace_tag_for_tc() const
 
     return ret;
 }
+
+uint64_t ExecutionState::get_symbolics_index(const Array* sym_array) const
+{
+    for (uint64_t i=0; i<symbolics.size(); ++i) {
+        if(symbolics[i].second == sym_array)
+        {
+            return i;
+        }
+    };
+
+    assert(0 && "[CRETE Error] input sym_array does not match any symbolics in ExecutionState\n");
+}
+
+void ExecutionState::get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty& tcp_tt) const
+{
+    uint64_t tt_index;
+    uint64_t tt_node_br_index;
+
+    if(m_current_node_br_taken.empty())
+    {
+        // When the current tc is for the last br within a node (when m_current_node_br_taken is empty),
+        // the m_trace_tag_current_node_index is off by 1, so adjust it to the correct value.
+        tt_index = m_trace_tag_current_node_index - 1;
+        tt_node_br_index = g_qemu_rt_Info->get_tt_node_br_num(tt_index) - 1;
+    } else {
+        // Otherwise the tc is not for the last br witin a node
+        tt_index = m_trace_tag_current_node_index;
+        // the m_trace_tag_current_node_br_taken_index is off by 1
+        tt_node_br_index = m_trace_tag_current_node_br_taken_index - 1;
+    }
+
+    assert(tt_index < UINT32_MAX);
+    assert(tt_node_br_index < UINT32_MAX);
+
+    tcp_tt.first = (uint32_t) tt_index;
+    tcp_tt.second = (uint32_t) tt_node_br_index;
+}
 #endif // CRETE_CONFIG

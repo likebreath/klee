@@ -574,6 +574,27 @@ void QemuRuntimeInfo::get_trace_tag_for_tc(uint64_t tt_tag_index,
     }
 }
 
+uint64_t QemuRuntimeInfo::get_tt_node_br_num(uint64_t tt_tag_index) const
+{
+    uint64_t ret;
+
+    assert(tt_tag_index < (m_trace_tag_explored.size() + m_trace_tag_new.size()));
+
+    if(tt_tag_index < m_trace_tag_explored.size())
+    {
+        ret = m_trace_tag_explored[tt_tag_index].m_br_taken.size();
+
+        if(tt_tag_index == (m_trace_tag_explored.size() - 1) && !m_trace_tag_semi_explored.empty())
+        {
+             ret += m_trace_tag_semi_explored.front().m_br_taken.size();
+        }
+    } else {
+        ret = m_trace_tag_new[tt_tag_index - m_trace_tag_explored.size()].m_br_taken.size();
+    }
+
+    return ret;
+}
+
 
 /*****************************/
 /* Functions for klee */

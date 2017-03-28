@@ -3967,14 +3967,17 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   assert(values.size() == state.symbolics.size());
   const constraint_dependency_ty&  complete_deps= state.constraints.get_constraint_dependency().get();
 
-#if defined(CRETE_DEBUG_CONCOLIC_TG)
-//  static uint64_t tc_num = 1;
-//  cerr << "\n=== tc-" << tc_num++ << "===\n";
-//  cerr << "complete_deps: ";
-//  state.constraints.get_constraint_dependency().print_deps();
-
+#if defined(CRETE_CHECK_CONCOLIC_TG)
   vector< std::vector<unsigned char> > sym_values(values);
 #endif
+
+  CRETE_DBG_CTG(
+  static uint64_t tc_num = 1;
+  cerr << "\n=== tc-" << tc_num++ << "===\n";
+  cerr << "complete_deps: ";
+  state.constraints.get_constraint_dependency().print_deps();
+  );
+
 
   for (unsigned i = 0; i != state.symbolics.size(); ++i)
   {
@@ -4000,7 +4003,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
       }
   }
 
-  CRETE_DBG_CTG(crete_assert_concolic_tc(state, sym_values, values););
+  CRETE_CK_CTG(crete_assert_concolic_tc(state, sym_values, values););
 #endif // defined(CRETE_CONFIG)
 
   for (unsigned i = 0; i != state.symbolics.size(); ++i)
@@ -4331,8 +4334,8 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
     }
 
     CRETE_DBG_CTG(
-//    const ExecutionState& exist_state = branches.first?(*branches.first):(*branches.second);
-//    exist_state.crete_assert_concolic_replay();
+    const ExecutionState& exist_state = branches.first?(*branches.first):(*branches.second);
+    exist_state.crete_assert_concolic_replay();
     );
 
     return branches;
@@ -4657,6 +4660,42 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     }
 
     return success;
+}
+
+// concolic test case generation
+bool Executor::crete_getConcolicSolution(const ExecutionState &state,
+                                         std::vector<crete::TestCasePatchElement_ty>& tcp_elems)
+{
+    std::vector< std::pair<std::string, std::vector<unsigned char> > > res;
+    bool success = getSymbolicSolution(state, res);
+    assert(res.size() == state.symbolics.size());
+
+    const constraint_dependency_ty&  complete_deps= state.constraints.get_constraint_dependency().get();
+
+    assert(tcp_elems.empty());
+    tcp_elems.resize(res.size());
+    for(constraint_dependency_ty::const_iterator it = complete_deps.begin();
+            it != complete_deps.end(); ++it)
+    {
+        uint32_t index = it->second;
+
+        uint64_t symbolics_index = state.get_symbolics_index(it->first);
+        assert(symbolics_index < res.size());
+        assert(index < res[symbolics_index].second.size());
+
+        uint8_t value = res[symbolics_index].second[index];
+
+        tcp_elems[symbolics_index].push_back(std::make_pair(index, value));
+    }
+
+    return success;
+
+    CRETE_DBG_CTG(
+    static uint64_t tc_num = 1;
+    cerr << "\n=== tc-" << tc_num++ << "===\n";
+    cerr << "complete_deps: ";
+    state.constraints.get_constraint_dependency().print_deps();
+    );
 }
 
 void Executor::crete_assert_concolic_tc(const ExecutionState &state,
