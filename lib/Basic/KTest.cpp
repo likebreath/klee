@@ -13,7 +13,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#if defined(CRETE_CONFIG)
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
 #include <crete/test_case.h>
 #include <crete/trace_tag.h>
 
@@ -25,7 +25,7 @@
 //#include <cassert>
 #include <sys/stat.h>
 #include <fstream>
-#endif // CRETE_CONFIG
+#endif // CRETE_DEBUG_CONCOLIC_TG
 
 #define KTEST_VERSION 3
 #define KTEST_MAGIC_SIZE 5
@@ -190,9 +190,9 @@ KTest *kTest_fromFile(const char *path) {
 }
 
 int kTest_toFile(KTest *bo, const char *path) {
-#if defined(CRETE_CONFIG)
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
   assert(0 && "[CRETE ERROR] native kTest_toFile is invoked\n");
-#endif // CRETE_CONFIG
+#endif // CRETE_DEBUG_CONCOLIC_TG
 
   FILE *f = fopen(path, "wb");
   unsigned i;
@@ -257,7 +257,7 @@ void kTest_free(KTest *bo) {
   free(bo);
 }
 
-#if defined(CRETE_CONFIG)
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
 int crete_kTest_toFile(KTest *bo, const char *path,
         const void *trace_tag_explored) {
   { // Special local scope required b/c goto use.
@@ -294,7 +294,7 @@ int crete_kTest_toFile(KTest *bo, const char *path,
           ctc.add_element(elem);
       }
 
-      const char* ktest_pool_dir = "ktest_pool";
+      const char* ktest_pool_dir = "crete_svm_test_pool_complete";
 
       struct stat sb;
       if(!(stat(ktest_pool_dir, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?
@@ -315,4 +315,4 @@ int crete_kTest_toFile(KTest *bo, const char *path,
 
   return 1;
 }
-#endif // CRETE_CONFIG
+#endif // CRETE_DEBUG_CONCOLIC_TG

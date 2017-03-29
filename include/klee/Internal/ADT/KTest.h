@@ -11,6 +11,7 @@
 #define __COMMON_KTEST_H__
 
 #if defined(CRETE_CONFIG)
+#include "crete-replayer/crete_debug.h"
 #include <stdint.h>
 #endif // CRETE_CONFIG
 
@@ -24,9 +25,9 @@ extern "C" {
     unsigned numBytes;
     unsigned char *bytes;
 
-#if defined(CRETE_CONFIG)
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
     uint64_t address;
-#endif // CRETE_CONFIG
+#endif // CRETE_DEBUG_CONCOLIC_TG
   };
   
   typedef struct KTest KTest;
@@ -62,11 +63,11 @@ extern "C" {
 
   void  kTest_free(KTest *);
 
-#if defined(CRETE_CONFIG)
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
   /* returns 1 on success, 0 on (unspecified) error */
   int crete_kTest_toFile(KTest *bo, const char *path,
           const void *trace_tag_explored);
-#endif // CRETE_CONFIG
+#endif // CRETE_DEBUG_CONCOLIC_TG
 
 #ifdef __cplusplus
 }
