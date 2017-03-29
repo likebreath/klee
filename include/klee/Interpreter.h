@@ -18,6 +18,8 @@
 #include <stdint.h>
 #include <crete/trace_tag.h>
 #include <crete/test_case.h>
+
+#include "crete-replayer/crete_debug.h"
 #endif // CRETE_CONFIG
 
 struct KTest;
@@ -158,13 +160,16 @@ public:
                                    std::vector<unsigned char> > >
                                    &res) = 0;
 
-#if defined(CRETE_CONFIG)
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
   virtual bool getSymbolicSolution(const ExecutionState &state,
                                    std::vector<
                                    std::pair<std::string,
                                    std::vector<unsigned char> > >
                                    &res,
                                    std::vector<uint64_t>& addresses) = 0;
+#endif // CRETE_DEBUG_CONCOLIC_TG
+
+#if defined(CRETE_CONFIG)
   virtual bool crete_getConcolicSolution(const ExecutionState &state,
                                          std::vector<crete::TestCasePatchElement_ty>& tcp_elems);
 #endif // CRETE_CONFIG

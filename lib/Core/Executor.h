@@ -32,6 +32,7 @@
 
 #if defined(CRETE_CONFIG)
 #include "crete-replayer/qemu_rt_info.h"
+#include "crete-replayer/crete_debug.h"
 #endif // CRETE_CONFIG
 
 struct KTest;
@@ -545,12 +546,6 @@ private:
 
   void crete_abortCurrentTBExecution(klee::ExecutionState* state);
 
-  virtual bool getSymbolicSolution(const ExecutionState &state,
-                                   std::vector<
-                                   std::pair<std::string,
-                                   std::vector<unsigned char> > >
-                                   &res,
-                                   std::vector<uint64_t>& addresses);
   virtual bool crete_getConcolicSolution(const ExecutionState &state,
                                          std::vector<crete::TestCasePatchElement_ty>& tcp_elems);
 
@@ -626,6 +621,15 @@ private:
           const std::vector<std::vector<unsigned char> > &symbolic_res,
           const std::vector<std::vector<unsigned char> > &concolic_res) const;
 #endif // CRETE_CONFIG
+
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
+    virtual bool getSymbolicSolution(const ExecutionState &state,
+                                     std::vector<
+                                     std::pair<std::string,
+                                     std::vector<unsigned char> > >
+                                     &res,
+                                     std::vector<uint64_t>& addresses);
+#endif // CRETE_DEBUG_CONCOLIC_TG
 };
   
 } // End klee namespace

@@ -3852,14 +3852,12 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
     return false;
   }
   
-#if defined(CRETE_CONFIG)
+#if defined(CRETE_CHECK_CONCOLIC_TG)
   // concolic test case generation
   assert(values.size() == state.symbolics.size());
   const constraint_dependency_ty&  complete_deps= state.constraints.get_constraint_dependency().get();
 
-#if defined(CRETE_CHECK_CONCOLIC_TG)
   vector< std::vector<unsigned char> > sym_values(values);
-#endif
 
   CRETE_DBG_CTG(
   static uint64_t tc_num = 1;
@@ -3894,7 +3892,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
   }
 
   CRETE_CK_CTG(crete_assert_concolic_tc(state, sym_values, values););
-#endif // defined(CRETE_CONFIG)
+#endif // defined(CRETE_CHECK_CONCOLIC_TG)
 
   for (unsigned i = 0; i != state.symbolics.size(); ++i)
     res.push_back(std::make_pair(state.symbolics[i].first->name, values[i]));
@@ -4463,6 +4461,7 @@ void Executor::crete_abortCurrentTBExecution(klee::ExecutionState* state) {
     ++state->pc;
 }
 
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
 bool Executor::getSymbolicSolution(const ExecutionState &state,
                                    std::vector<
                                    std::pair<std::string,
@@ -4478,6 +4477,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 
     return success;
 }
+#endif // defined(CRETE_DEBUG_CONCOLIC_TG)
 
 // concolic test case generation
 bool Executor::crete_getConcolicSolution(const ExecutionState &state,

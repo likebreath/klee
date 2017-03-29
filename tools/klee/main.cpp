@@ -438,6 +438,7 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
 #if defined(CRETE_CONFIG)
 #include <crete/test_case.h>
 #include <crete/trace_tag.h>
+#include <crete/common.h>
 
 #include "crete-replayer/crete_debug.h"
 #include "crete-replayer/qemu_rt_info.h"
@@ -454,15 +455,13 @@ int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty tcp_tt,
 
     crete::TestCase ctc(tcp_tt, tcp_elems);
 
-    const char* ktest_pool_dir = "testpatch_pool";
-
     struct stat sb;
-    if(!(stat(ktest_pool_dir, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?
-        if(mkdir(ktest_pool_dir, 0777) == -1) // create dir.
+    if(!(stat(CRETE_SVM_TEST_FOLDER, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?
+        if(mkdir(CRETE_SVM_TEST_FOLDER, 0777) == -1) // create dir.
             assert(0 && "can't create ktest_pool directory");
 
     std::stringstream kt_file_name;
-    kt_file_name << ktest_pool_dir;
+    kt_file_name << CRETE_SVM_TEST_FOLDER;
     kt_file_name << "/";
     kt_file_name << ++g_test_case_count;
     kt_file_name << ".bin";
@@ -493,8 +492,8 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     crete::TestCasePatchTraceTag_ty tcp_tt;
     state.get_trace_tag_patch_for_tc(tcp_tt);
 
-//    double start_time = util::getWallTime();
-//    unsigned id = ++m_testIndex;
+    double start_time = util::getWallTime();
+    unsigned id = ++m_testIndex;
 
     if(concolic_success)
     {
@@ -507,13 +506,10 @@ void KleeHandler::processTestCase(const ExecutionState &state,
     } else {
         klee_warning("unable to get symbolic solution, losing test case");
     }
-#endif
 
+#if defined(CRETE_DEBUG_CONCOLIC_TG)
     std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
 
-#if !defined(CRETE_CONFIG)
-    bool success = m_interpreter->getSymbolicSolution(state, out);
-#else // CRETE_CONFIG
     std::vector<uint64_t> addresses;
     bool success = m_interpreter->getSymbolicSolution(state, out, addresses);
 
@@ -522,7 +518,44 @@ void KleeHandler::processTestCase(const ExecutionState &state,
             << ", out.size() = " << out.size()
             << ", success = " << success << std::endl;
     );
-#endif // CRETE_CONFIG
+
+    if (!success)
+      klee_warning("unable to get symbolic solution, losing test case");
+
+    if (success) {
+      KTest b;
+      b.numArgs = m_argc;
+      b.args = m_argv;
+      b.symArgvs = 0;
+      b.symArgvLen = 0;
+      b.numObjects = out.size();
+      b.objects = new KTestObject[b.numObjects];
+      assert(b.objects);
+      for (unsigned i=0; i<b.numObjects; i++) {
+        KTestObject *o = &b.objects[i];
+        o->name = const_cast<char*>(out[i].first.c_str());
+        o->numBytes = out[i].second.size();
+        o->bytes = new unsigned char[o->numBytes];
+        assert(o->bytes);
+        std::copy(out[i].second.begin(), out[i].second.end(), o->bytes);
+
+        o->address = addresses[i];
+      }
+      crete::creteTraceTag_ty current_tt_explored = state.get_trace_tag_for_tc();
+      if (!crete_kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str(),
+              &current_tt_explored)) {
+          klee_warning("unable to write output test case, losing it");
+      }
+
+      for (unsigned i=0; i<b.numObjects; i++)
+        delete[] b.objects[i].bytes;
+      delete[] b.objects;
+    }
+#endif // CRETE_DEBUG_CONCOLIC_TG
+#else // !defined(CRETE_CONFIG)
+    std::vector< std::pair<std::string, std::vector<unsigned char> > > out;
+
+    bool success = m_interpreter->getSymbolicSolution(state, out);
 
     if (!success)
       klee_warning("unable to get symbolic solution, losing test case");
@@ -547,27 +580,17 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         o->bytes = new unsigned char[o->numBytes];
         assert(o->bytes);
         std::copy(out[i].second.begin(), out[i].second.end(), o->bytes);
-
-#if defined(CRETE_CONFIG)
-        o->address = addresses[i];
-#endif //CRETE_CONFIG
       }
-#if !defined(CRETE_CONFIG)
+
       if (!kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str())) {
         klee_warning("unable to write output test case, losing it");
       }
-#else //CRETE_CONFIG
-      crete::creteTraceTag_ty current_tt_explored = state.get_trace_tag_for_tc();
-      if (!crete_kTest_toFile(&b, getOutputFilename(getTestFilename("ktest", id)).c_str(),
-              &current_tt_explored)) {
-          klee_warning("unable to write output test case, losing it");
-      }
-#endif //CRETE_CONFIG
 
       for (unsigned i=0; i<b.numObjects; i++)
         delete[] b.objects[i].bytes;
       delete[] b.objects;
     }
+#endif //CRETE_CONFIG
 
     if (errorMessage) {
       llvm::raw_ostream *f = openTestFile(errorSuffix, id);
