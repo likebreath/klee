@@ -1,7 +1,6 @@
 #include "crete-replayer/qemu_rt_info.h"
 #include "../Core/Memory.h"
 #include "klee/ExecutionState.h"
-#include "crete/test_case.h"
 
 #include <iostream>
 #include <sstream>
@@ -19,6 +18,7 @@ QemuRuntimeInfo::QemuRuntimeInfo()
 {
     m_streamed_tb_count = 0;
     m_streamed_index = 0;
+    m_base_tc_hash = 0;
 
     // to-be-streamed
     init_interruptStates();
@@ -155,6 +155,8 @@ void QemuRuntimeInfo::init_concolics()
     ifstream inputs("concrete_inputs.bin", ios_base::in | ios_base::binary);
     assert(inputs && "failed to open concrete_inputs file!");
     const TestCase tc = read_serialized(inputs);
+
+    m_base_tc_hash = tc.hash();
 
     // Get the concrete value of conoclic variables and put them in a map indexed by name
     vector<TestCaseElement> tc_elements = tc.get_elements();

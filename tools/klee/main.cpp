@@ -448,12 +448,13 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
 #include <sys/stat.h>
 #include <fstream>
 
-int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty tcp_tt,
-        const std::vector<crete::TestCasePatchElement_ty>& tcp_elems)
+int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty& tcp_tt,
+        const std::vector<crete::TestCasePatchElement_ty>& tcp_elems,
+        const crete::TestCaseHash& base_tc_hash)
 {
     static uint64_t g_test_case_count = 0;
 
-    crete::TestCase ctc(tcp_tt, tcp_elems);
+    crete::TestCase ctc(tcp_tt, tcp_elems, base_tc_hash);
 
     struct stat sb;
     if(!(stat(CRETE_SVM_TEST_FOLDER, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?
@@ -497,7 +498,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
     if(concolic_success)
     {
-        if (!crete_concolicTest_tofile(tcp_tt, tcp_elems))
+        if (!crete_concolicTest_tofile(tcp_tt, tcp_elems, g_qemu_rt_Info->get_base_tc_hash()))
         {
             klee_warning("unable to write output test case, losing it");
         }
