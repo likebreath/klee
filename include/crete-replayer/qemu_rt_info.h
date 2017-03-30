@@ -8,7 +8,9 @@
 
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/map.hpp>
+
 #include <crete/trace_tag.h>
+#include "crete/test_case.h"
 
 using namespace std;
 
@@ -138,6 +140,9 @@ private:
     crete::creteTraceTag_ty m_trace_tag_semi_explored;
     crete::creteTraceTag_ty m_trace_tag_new;
 
+    // Concolic Test Generation
+    crete::TestCaseHash m_base_tc_hash;
+
     // For Debugging Purpose:
     // The CPUState after each interested TB being executed for cross checking on klee side
     vector<cpuStateSyncTable_ty> m_debug_cpuStateSyncTables;
@@ -174,6 +179,9 @@ public:
 	        crete::creteTraceTag_ty &tt_tag_for_tc,
 	        vector<bool>& current_node_br_taken_semi_explored) const;
 	uint64_t get_tt_node_br_num(uint64_t tt_tag_index) const;
+
+	// Concolic test generation
+	crete::TestCaseHash get_base_tc_hash() const {return m_base_tc_hash;}
 
 private:
 	//TODO: xxx not a good solution
