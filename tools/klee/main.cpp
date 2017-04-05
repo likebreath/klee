@@ -441,7 +441,7 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
 
 int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty& tcp_tt,
         const std::vector<crete::TestCasePatchElement_ty>& tcp_elems,
-        const crete::TestCaseHash& base_tc_hash)
+        const crete::TestCaseHashComplete& base_tc_hash)
 {
     static uint64_t g_test_case_count = 0;
 
