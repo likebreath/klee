@@ -141,7 +141,7 @@ private:
     crete::creteTraceTag_ty m_trace_tag_new;
 
     // Concolic Test Generation
-    crete::TestCaseHashComplete m_base_tc_hash;
+    crete::TestCaseIssueIndex m_base_tc_issue_index;
 
     // For Debugging Purpose:
     // The CPUState after each interested TB being executed for cross checking on klee side
@@ -181,7 +181,7 @@ public:
 	uint64_t get_tt_node_br_num(uint64_t tt_tag_index) const;
 
 	// Concolic test generation
-	crete::TestCaseHashComplete get_base_tc_hash() const {return m_base_tc_hash;}
+	crete::TestCaseIssueIndex get_base_tc_issue_index() const {return m_base_tc_issue_index;}
 
 private:
 	//TODO: xxx not a good solution

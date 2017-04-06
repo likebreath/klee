@@ -18,7 +18,7 @@ QemuRuntimeInfo::QemuRuntimeInfo()
 {
     m_streamed_tb_count = 0;
     m_streamed_index = 0;
-    m_base_tc_hash = string();
+    m_base_tc_issue_index = 0;
 
     // to-be-streamed
     init_interruptStates();
@@ -156,7 +156,7 @@ void QemuRuntimeInfo::init_concolics()
     assert(inputs && "failed to open concrete_inputs file!");
     const TestCase tc = read_serialized(inputs);
 
-    m_base_tc_hash = tc.complete_hash();
+    m_base_tc_issue_index = tc.get_issue_index();
 
     // Get the concrete value of conoclic variables and put them in a map indexed by name
     vector<TestCaseElement> tc_elements = tc.get_elements();
