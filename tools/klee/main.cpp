@@ -478,11 +478,19 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
   if (!NoOutput) {
 #if defined(CRETE_CONFIG)
+    crete::TestCasePatchTraceTag_ty tcp_tt;
+    bool explored_node = state.get_trace_tag_patch_for_tc(tcp_tt);
+    if(explored_node)
+    {
+        fprintf(stderr, "[CRETE Warning] Skip test case generation as the "
+                "current tt node was explored: (%lu, %lu). "
+                "The current state should be terminated prematurely, such as timeout, mem cap, etc\n",
+                tcp_tt.first, tcp_tt.second);
+        return;
+    }
+
     std::vector<crete::TestCasePatchElement_ty> tcp_elems;
     bool concolic_success = m_interpreter->crete_getConcolicSolution(state, tcp_elems);
-
-    crete::TestCasePatchTraceTag_ty tcp_tt;
-    state.get_trace_tag_patch_for_tc(tcp_tt);
 
     double start_time = util::getWallTime();
     unsigned id = ++m_testIndex;

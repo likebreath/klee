@@ -215,7 +215,7 @@ public:
 
   // concolic test generation
   uint64_t get_symbolics_index(const Array* sym_array) const;
-  void get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty& tcp_tt) const;
+  bool get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty& tcp_tt) const;
 
 private:
   std::deque<ConcolicVariable > creteConcolicsQueue;
