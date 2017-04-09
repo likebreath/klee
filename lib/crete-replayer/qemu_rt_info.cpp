@@ -597,6 +597,16 @@ uint64_t QemuRuntimeInfo::get_tt_node_br_num(uint64_t tt_tag_index) const
     return ret;
 }
 
+bool QemuRuntimeInfo::is_tt_node_explored(uint64_t tt_tag_index) const
+{
+    if(tt_tag_index < m_trace_tag_explored.size())
+    {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 
 /*****************************/
 /* Functions for klee */

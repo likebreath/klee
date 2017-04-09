@@ -660,7 +660,8 @@ uint64_t ExecutionState::get_symbolics_index(const Array* sym_array) const
     assert(0 && "[CRETE Error] input sym_array does not match any symbolics in ExecutionState\n");
 }
 
-void ExecutionState::get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty& tcp_tt) const
+// ret: false, if the current tt-node is not explored; true, otherwise
+bool ExecutionState::get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty& tcp_tt) const
 {
     uint64_t tt_index;
     uint64_t tt_node_br_index;
@@ -683,5 +684,7 @@ void ExecutionState::get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty&
 
     tcp_tt.first = (uint32_t) tt_index;
     tcp_tt.second = (uint32_t) tt_node_br_index;
+
+    return g_qemu_rt_Info->is_tt_node_explored(tt_index);
 }
 #endif // CRETE_CONFIG
