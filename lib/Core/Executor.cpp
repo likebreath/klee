@@ -4092,8 +4092,8 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
     // Fork now is only disabled when handling crete_assume()
     if(current.crete_fork_enabled && !crete_manual_disable_fork(current))
     {
-        // Does not fork when "check_trace_tag" is valid and the node/branch has been not explored
-        if(!check_trace_tag || !explored_node)
+        // Only forks for the not-explored node
+        if(check_trace_tag && !explored_node)
         {
             branches = fork(current, condition, false);
         }
