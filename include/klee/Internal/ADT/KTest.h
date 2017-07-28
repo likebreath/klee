@@ -10,6 +10,9 @@
 #ifndef __COMMON_KTEST_H__
 #define __COMMON_KTEST_H__
 
+#if defined(CRETE_CONFIG)
+#include <stdint.h>
+#endif // CRETE_CONFIG
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,6 +23,10 @@ extern "C" {
     char *name;
     unsigned numBytes;
     unsigned char *bytes;
+
+#if defined(CRETE_CONFIG)
+    uint64_t address;
+#endif // CRETE_CONFIG
   };
   
   typedef struct KTest KTest;
@@ -54,6 +61,12 @@ extern "C" {
   unsigned kTest_numBytes(KTest *);
 
   void  kTest_free(KTest *);
+
+#if defined(CRETE_CONFIG)
+  /* returns 1 on success, 0 on (unspecified) error */
+  int crete_kTest_toFile(KTest *bo, const char *path,
+          const void *trace_tag_explored);
+#endif // CRETE_CONFIG
 
 #ifdef __cplusplus
 }

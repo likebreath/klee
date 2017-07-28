@@ -23,7 +23,9 @@ Solver *createCoreSolver(CoreSolverType cst) {
   switch (cst) {
   case STP_SOLVER:
 #ifdef ENABLE_STP
+#if !defined(CRETE_CONFIG)
     klee_message("Using STP solver backend");
+#endif
     return new STPSolver(UseForkedCoreSolver, CoreSolverOptimizeDivides);
 #else
     klee_message("Not compiled with STP support");

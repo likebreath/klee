@@ -233,6 +233,22 @@ bool SpecialFunctionHandler::handle(ExecutionState &state,
     }
     return true;
   } else {
+#if defined(CRETE_CONFIG)
+    uhandlers_ty::iterator uit = uhandlers.find(f);
+    if (uit != uhandlers.end()) {
+        FunctionHandler h = uit->second.first;
+        bool hasReturnValue = uit->second.second;
+        // FIXME: Check this... add test?
+        if (!hasReturnValue && !target->inst->use_empty()) {
+            executor.terminateStateOnExecError(state,
+                    "expected return value from void special function");
+        } else {
+            h(&executor, &state, target, arguments);
+        }
+        return true;
+    }
+#endif
+
     return false;
   }
 }
@@ -781,3 +797,32 @@ void SpecialFunctionHandler::handleDivRemOverflow(ExecutionState &state,
   executor.terminateStateOnError(state, "overflow on division or remainder",
                                  Executor::Overflow);
 }
+
+#if defined(CRETE_CONFIG)
+void SpecialFunctionHandler::addUHandler(llvm::Function* f, FunctionHandler h)
+{
+    uhandlers[f] = std::make_pair(h,
+                f->getReturnType()->getTypeID() != llvm::Type::VoidTyID);
+}
+
+std::string SpecialFunctionHandler::readStringAtAddress2(ExecutionState& state, ref<Expr> address)
+{
+    ObjectPair op;
+    bool success;
+    executor.solver->setTimeout(executor.coreSolverTimeout);
+    if (!state.addressSpace.resolveOne(state, executor.solver, address, op, success)) {
+      address = executor.toConstant(state, address, "resolveOne failure");
+      success = state.addressSpace.resolveOne(cast<ConstantExpr>(address), op);
+    }
+    executor.solver->setTimeout(0);
+
+    const MemoryObject* mo = op.first;
+    const ObjectState* os = op.second;
+
+    std::vector<uint8_t> value;
+    for(size_t i = 0; i < mo->size; ++i)
+        value.push_back(dyn_cast<ConstantExpr>(os->read8(i))->getZExtValue());
+
+    return std::string(reinterpret_cast<char*>(value.data()));
+}
+#endif // CRETE_CONFIG

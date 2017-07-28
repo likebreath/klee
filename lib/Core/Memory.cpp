@@ -70,6 +70,14 @@ ObjectHolder &ObjectHolder::operator=(const ObjectHolder &b) {
 int MemoryObject::counter = 0;
 
 MemoryObject::~MemoryObject() {
+  CRETE_DBG_MEMORY(
+  if(size != 0){
+      std::string moInfo;
+      this->getAllocInfo(moInfo);
+      std::cerr << "~MemoryObject(): " << moInfo << std::endl;
+  }
+  );
+
   if (parent)
     parent->markFreed(this);
 }
@@ -78,6 +86,10 @@ void MemoryObject::getAllocInfo(std::string &result) const {
   llvm::raw_string_ostream info(result);
 
   info << "MO" << id << "[" << size << "]";
+
+  CRETE_DBG_MEMORY(
+  info << " (" << (void *)address << ", " << size <<", " <<  refCount << ")";
+  );
 
   if (allocSite) {
     info << " allocated at ";
@@ -604,3 +616,31 @@ void ObjectState::print() {
     llvm::errs() << "\t\t[" << un->index << "] = " << un->value << "\n";
   }
 }
+
+#if defined(CRETE_CONFIG)
+void ObjectState::write_n(unsigned offset, std::vector<uint8_t> value) {
+    uint64_t NumBytes = value.size();
+    for (uint64_t idx = 0; idx != NumBytes; ++idx) {
+        write8(offset + idx, value[idx]);
+    }
+}
+
+void ObjectState::write_n(unsigned offset, std::vector< ref<Expr> > value) {
+    uint64_t NumBytes = value.size();
+    for (uint64_t idx = 0; idx != NumBytes; ++idx) {
+        write8(offset + idx, value[idx]);
+    }
+}
+
+void ObjectState::print_refCount() const
+{
+    std::cerr << std::hex << "addr = 0x" << object->address
+            << std::dec << ", os->refCount = " << refCount
+            << "mo->refCount = " << object->refCount << std::endl;
+}
+
+unsigned ObjectState::get_refCount() const
+{
+    return refCount;
+}
+#endif // CRETE_CONFIG
