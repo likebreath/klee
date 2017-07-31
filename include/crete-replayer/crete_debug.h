@@ -1,6 +1,10 @@
 #ifndef CRETE_DEBUG_H
 #define CRETE_DEBUG_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 //#define CRETE_CROSS_CHECK
 #define CRETE_CHECK_CONCOLIC_TG
 
@@ -73,6 +77,15 @@
 #define CRETE_CK_CTG(x) do { } while(0)
 #endif
 
+#ifdef __cplusplus
+}
+#endif
+
+/*****************************/
+/* C++ code */
+
+#ifdef __cplusplus
+
 #include <crete/trace_tag.h>
 #include <fstream>
 
@@ -96,5 +109,7 @@ inline void print_trace_tag(const crete::creteTraceTag_ty& trace_tag)
 
 } // namespace debug
 } // namespace crete
+
+#endif  /* __cplusplus end*/
 
 #endif // CRETE_DEBUG_H

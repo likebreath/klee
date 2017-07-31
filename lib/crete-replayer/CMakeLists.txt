@@ -6,20 +6,12 @@
 # License. See LICENSE.TXT for details.
 #
 #===------------------------------------------------------------------------===#
-add_executable(klee
-  main.cpp
+klee_add_component(crete-replayer
+  qemu_rt_info.cpp
 )
 
-set(KLEE_LIBS
-  kleeCore
-  crete-replayer
-  crete_test_case
-  boost_serialization
+set(LLVM_COMPONENTS
+  support
 )
-
-target_link_libraries(klee ${KLEE_LIBS})
-
-install(TARGETS klee RUNTIME DESTINATION bin)
-
-# The KLEE binary depends on the runtimes
-add_dependencies(klee BuildKLEERuntimes)
+klee_get_llvm_libs(LLVM_LIBS ${LLVM_COMPONENTS})
+target_link_libraries(crete-replayer PUBLIC ${LLVM_LIBS})

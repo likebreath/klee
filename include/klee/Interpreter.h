@@ -175,7 +175,7 @@ public:
 
 #if defined(CRETE_CONFIG)
   virtual bool crete_getConcolicSolution(const ExecutionState &state,
-                                         std::vector<crete::TestCasePatchElement_ty>& tcp_elems);
+                                         std::vector<crete::TestCasePatchElement_ty>& tcp_elems) = 0;
 #endif // CRETE_CONFIG
 
   virtual void getCoveredLines(const ExecutionState &state,
