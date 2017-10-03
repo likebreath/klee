@@ -4068,6 +4068,15 @@ void Executor::crete_init_special_function_handler() {
         if (!function->isDeclaration())
             function->deleteBody();
     }
+
+    function = kmodule->module->getFunction("helper_crete_custom_instruction_handler");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteCustomInstrHandler);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
 }
 
 Executor::StatePair
@@ -4954,6 +4963,16 @@ void Executor::handleCreteVerifyCpuStateOffset(klee::Executor* executor,
     cerr << "[CRETE WARNING] CRETE_CROSS_CHECK is disabled on klee side while not being disabled from translator and maybe qemu\n";
 #endif
 }
+
+
+void Executor::handleCreteCustomInstrHandler(klee::Executor* executor,
+        klee::ExecutionState* state,
+        klee::KInstruction* target,
+        std::vector<klee::ref<klee::Expr> > &args)
+{
+    fprintf(stderr, "[CRETE WARNING] crete_custom_instruction_handler() is captured.");;
+}
+
 
 std::string Executor::crete_readStringAtAddress(Executor &executor,
         ExecutionState &state, ref<Expr> addressExpr) {

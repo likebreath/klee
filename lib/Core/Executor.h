@@ -614,6 +614,11 @@ private:
             klee::KInstruction* target,
             std::vector<klee::ref<klee::Expr> > &args);
 
+  static void handleCreteCustomInstrHandler(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
   static std::string crete_readStringAtAddress(Executor &executor,
           ExecutionState &state, ref<Expr> addressExpr);
 
