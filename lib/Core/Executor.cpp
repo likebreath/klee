@@ -4815,12 +4815,6 @@ void Executor::handleCreteInitCpuState(klee::Executor* executor,
     const ObjectState *os = res.second;
     assert(mo && os);
 
-    vector<uint8_t> init_cpuState = g_qemu_rt_Info->get_initial_cpuState();
-    assert(os->size == init_cpuState.size());
-
-    ObjectState* wos = state->addressSpace.getWriteable(mo, os);
-    wos->write_n(0, init_cpuState);
-
     state->crete_cpu_state = mo;
 }
 

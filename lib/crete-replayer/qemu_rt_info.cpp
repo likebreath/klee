@@ -24,7 +24,6 @@ QemuRuntimeInfo::QemuRuntimeInfo()
     init_interruptStates();
 
     // not-streamed
-	init_initial_cpuState();
 	init_concolics();
 
 	CRETE_CK(read_debug_cpuState_offsets(););
@@ -33,12 +32,6 @@ QemuRuntimeInfo::QemuRuntimeInfo()
 QemuRuntimeInfo::~QemuRuntimeInfo()
 {
     cleanup_concolics();
-}
-
-vector<uint8_t> QemuRuntimeInfo::get_initial_cpuState()
-{
-    assert(!m_initial_cpuState.empty());
-    return m_initial_cpuState;
 }
 
 void QemuRuntimeInfo::sync_cpuState(klee::ObjectState *wos, uint64_t tb_index) {
@@ -251,22 +244,6 @@ void QemuRuntimeInfo::print_memoSyncTables()
 			cerr << dec << endl;
 		}
 	}
-}
-
-void QemuRuntimeInfo::init_initial_cpuState()
-{
-    assert(m_initial_cpuState.empty());
-
-    ifstream i_sm("dump_initial_cpuState.bin", ios_base::binary);
-    assert(i_sm && "open file failed: dump_initial_cpuState.bin\n");;
-
-    i_sm.seekg(0, ios::end);
-    uint64_t size_cpuState = i_sm.tellg();
-    m_initial_cpuState.resize(size_cpuState);
-
-    i_sm.seekg(0, ios::beg);
-    i_sm.read((char *)m_initial_cpuState.data(), size_cpuState);
-    assert((uint64_t)i_sm.gcount() == size_cpuState);
 }
 
 void QemuRuntimeInfo::print_cpuSyncTable(uint64_t tb_index) const
