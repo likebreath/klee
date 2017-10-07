@@ -27,10 +27,6 @@ extern QemuRuntimeInfo *g_qemu_rt_Info;
 
 extern uint64_t g_test_case_count;
 
-//FIXME: xxx
-const uint64_t KLEE_ALLOC_RANGE_LOW  = 0x70000000;
-const uint64_t KLEE_ALLOC_RANGE_HIGH = 0x7FFFFFFF;
-
 /*****************************/
 /* Functions for klee */
 QemuRuntimeInfo* qemu_rt_info_initialize();
@@ -127,7 +123,6 @@ private:
 	// were made as symbolic by calling crete_make_concolic in qemu
 	concolics_ty m_concolics;
 
-	vector<uint8_t> m_initial_cpuState;
     vector<cpuStateSyncTable_ty> m_cpuStateSyncTables;
 	memoSyncTables_ty m_memoSyncTables;
 
@@ -154,9 +149,8 @@ public:
 	~QemuRuntimeInfo();
 
 	concolics_ty get_concolics() const;
-	vector<uint8_t> get_initial_cpuState();
 
-	void sync_cpuState(klee::ObjectState *wos, uint64_t tb_index);
+	void sync_cpuState(klee::ExecutionState &state, klee::ObjectState *wos, uint64_t tb_index);
 	void cross_check_cpuState(klee::ExecutionState &state,
 	        klee::ObjectState *wos, uint64_t tb_index);
 
@@ -200,7 +194,6 @@ private:
 	//    uint32_t read_interruptStates();
 
 	void init_concolics();
-	void init_initial_cpuState();
 
 	// Debugging
 	void init_debug_cpuOffsetTable();

@@ -13,6 +13,15 @@
 #include <set>
 #include <stdint.h>
 
+#if defined(CRETE_CONFIG)
+
+#define PAGE_ALIGN_BITS     (12)
+#define PAGE_SIZE           (1<<PAGE_ALIGN_BITS)
+#define PAGE_ADDRESS_MASK   (0xffffffffffffffffLL << PAGE_ALIGN_BITS)
+#define PAGE_OFFSET_MASK    (~PAGE_ADDRESS_MASK)
+
+#endif //defined(CRETE_CONFIG)
+
 namespace llvm {
 class Value;
 }
@@ -41,15 +50,10 @@ public:
    */
   MemoryObject *allocate(uint64_t size, bool isLocal, bool isGlobal,
                          const llvm::Value *allocSite, size_t alignment);
-#if !defined(CRETE_CONFIG)
+
   MemoryObject *allocateFixed(uint64_t address, uint64_t size,
                               const llvm::Value *allocSite);
-#else
-  MemoryObject *allocateFixed(uint64_t address, uint64_t size,
-                              const llvm::Value *allocSite,
-                              bool crete_call = false,
-                              bool skip_check = false);
-#endif
+
   void deallocate(const MemoryObject *mo);
   void markFreed(MemoryObject *mo);
   ArrayCache *getArrayCache() const { return arrayCache; }
@@ -61,10 +65,12 @@ public:
 
 #if defined(CRETE_CONFIG)
   private:
-    uint64_t next_alloc_address;
+    //  <static_addr, MemoryObject (with dynamic address)>
+    map<uint64_t, MemoryObject *> m_dyn_addr_map;
 
-    uint64_t get_next_address(uint64_t size);
-#endif
+  public:
+    bool find_dynamic_page_mo(uint64_t static_addr, MemoryObject *&ret_mo);
+#endif //defined(CRETE_CONFIG)
 };
 
 } // End klee namespace
