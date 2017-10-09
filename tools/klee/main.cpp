@@ -502,7 +502,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
             klee_warning("unable to write output test case, losing it");
         }
 
-        CRETE_DBG(std::cerr << std::dec << "tc-" << m_testIndex << ", success = " << success << std::endl;);
+        CRETE_DBG(std::cerr << std::dec << "tc-" << m_testIndex << ", success = " << concolic_success << std::endl;);
     } else {
         klee_warning("unable to get symbolic solution, losing test case");
     }
