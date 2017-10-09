@@ -34,7 +34,72 @@ QemuRuntimeInfo::~QemuRuntimeInfo()
     cleanup_concolics();
 }
 
-void QemuRuntimeInfo::sync_cpuState(klee::ObjectState *wos, uint64_t tb_index) {
+static void check_cpu_state(klee::ExecutionState &state, klee::ObjectState *os_current_cpu_state,
+                            const vector<CPUStateElement>& correct_cpu_state, uint64_t tb_index)
+{
+    bool cross_check_passed = true;
+
+    for(vector<CPUStateElement>::const_iterator it = correct_cpu_state.begin();
+            it != correct_cpu_state.end(); ++it) {
+
+        if(it->m_name.find("debug_cc_src") != string::npos)
+            continue;
+
+        vector<uint8_t> current_value;
+        for(uint64_t i = 0; i < it->m_size; ++i) {
+            klee::ref<klee::Expr> ref_current_value_byte;
+            uint8_t current_value_byte;
+
+            ref_current_value_byte = os_current_cpu_state->read8(it->m_offset + i);
+            if(!isa<klee::ConstantExpr>(ref_current_value_byte)) {
+                ref_current_value_byte = state.getConcreteExpr(ref_current_value_byte);
+                assert(isa<klee::ConstantExpr>(ref_current_value_byte));
+            }
+            current_value_byte = (uint8_t)llvm::cast<klee::ConstantExpr>(
+                    ref_current_value_byte)->getZExtValue(8);
+
+            current_value.push_back(current_value_byte);
+        }
+
+        vector<uint8_t> correct_value = it->m_data;
+        assert(correct_value.size() == it->m_size);
+        bool cross_check_passed_current = true;
+        for(uint64_t i = 0; i < it->m_size; ++i) {
+            if(current_value[i] != correct_value[i]) {
+                cross_check_passed_current = false;
+                break;
+            }
+        }
+
+        cross_check_passed = cross_check_passed && cross_check_passed_current;
+
+        if(!cross_check_passed_current) {
+            fprintf(stderr, "[CRETE ERROR] check_cpu_state() failed "
+                    "after tb-%lu on %s\n", tb_index, it->m_name.c_str());
+
+            cerr << "current value: [";
+            for(uint64_t i = 0; i < it->m_size; ++i) {
+                cerr << " 0x" << hex << (uint32_t)current_value[i];
+            }
+            cerr << "]\n";
+
+            cerr << "correct value: [";
+            for(uint64_t i = 0; i < it->m_size; ++i) {
+                cerr << " 0x" << hex << (uint32_t)correct_value[i];
+            }
+            cerr << "]\n";
+
+//            concretize_incorrect_cpu_element(os, *it);
+        }
+    }
+
+    if(!cross_check_passed){
+        state.print_stack();
+        assert(0);
+    }
+}
+
+void QemuRuntimeInfo::sync_cpuState(klee::ExecutionState &state, klee::ObjectState *wos, uint64_t tb_index) {
     if(tb_index >= m_streamed_tb_count) {
         read_streamed_trace();
         assert((m_streamed_tb_count - tb_index) == m_cpuStateSyncTables.size());
@@ -52,6 +117,8 @@ void QemuRuntimeInfo::sync_cpuState(klee::ObjectState *wos, uint64_t tb_index) {
     if(!cpuStateSyncTable.first) return;
 
     assert(!cpuStateSyncTable.second.empty());
+
+    check_cpu_state(state, wos, cpuStateSyncTable.second, tb_index);
 
     CRETE_DBG(cerr << " concretized elements: \n";);
     for(vector<CPUStateElement>::const_iterator it = cpuStateSyncTable.second.begin();
@@ -399,66 +466,7 @@ void QemuRuntimeInfo::cross_check_cpuState(klee::ExecutionState &state,
     const vector<CPUStateElement>& correct_cpuStates =
             m_debug_cpuStateSyncTables[adjusted_tb_index].second;
 
-    bool cross_check_passed = true;
-
-    for(vector<CPUStateElement>::const_iterator it = correct_cpuStates.begin();
-            it != correct_cpuStates.end(); ++it) {
-
-        if(it->m_name.find("debug_cc_src") != string::npos)
-            continue;
-
-        vector<uint8_t> current_value;
-        for(uint64_t i = 0; i < it->m_size; ++i) {
-            klee::ref<klee::Expr> ref_current_value_byte;
-            uint8_t current_value_byte;
-
-            ref_current_value_byte = os->read8(it->m_offset + i);
-            if(!isa<klee::ConstantExpr>(ref_current_value_byte)) {
-                ref_current_value_byte = state.getConcreteExpr(ref_current_value_byte);
-                assert(isa<klee::ConstantExpr>(ref_current_value_byte));
-            }
-            current_value_byte = (uint8_t)llvm::cast<klee::ConstantExpr>(
-                    ref_current_value_byte)->getZExtValue(8);
-
-            current_value.push_back(current_value_byte);
-        }
-
-        vector<uint8_t> correct_value = it->m_data;
-        assert(correct_value.size() == it->m_size);
-        bool cross_check_passed_current = true;
-        for(uint64_t i = 0; i < it->m_size; ++i) {
-            if(current_value[i] != correct_value[i]) {
-                cross_check_passed_current = false;
-                break;
-            }
-        }
-
-        cross_check_passed = cross_check_passed && cross_check_passed_current;
-
-        if(!cross_check_passed_current) {
-            fprintf(stderr, "[CRETE ERROR] cross_check_cpuState() failed "
-                    "after tb-%lu on %s\n", tb_index, it->m_name.c_str());
-
-            cerr << "current value: [";
-            for(uint64_t i = 0; i < it->m_size; ++i) {
-                cerr << " 0x" << hex << (uint32_t)current_value[i];
-            }
-            cerr << "]\n";
-
-            cerr << "correct value: [";
-            for(uint64_t i = 0; i < it->m_size; ++i) {
-                cerr << " 0x" << hex << (uint32_t)correct_value[i];
-            }
-            cerr << "]\n";
-
-//            concretize_incorrect_cpu_element(os, *it);
-        }
-    }
-
-    if(!cross_check_passed){
-        state.print_stack();
-        assert(0);
-    }
+    check_cpu_state(state, os, correct_cpuStates, tb_index);
 
     CRETE_DBG(cerr << "-------------------------------------------------------\n\n";);
 }

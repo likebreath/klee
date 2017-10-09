@@ -154,7 +154,7 @@ public:
 
 	concolics_ty get_concolics() const;
 
-	void sync_cpuState(klee::ObjectState *wos, uint64_t tb_index);
+	void sync_cpuState(klee::ExecutionState &state, klee::ObjectState *wos, uint64_t tb_index);
 	void cross_check_cpuState(klee::ExecutionState &state,
 	        klee::ObjectState *wos, uint64_t tb_index);
 

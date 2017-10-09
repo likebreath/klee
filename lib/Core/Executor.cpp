@@ -4625,7 +4625,7 @@ void Executor::crete_sync_cpu(ExecutionState& state, uint64_t tb_index)
 
     CRETE_CK(g_qemu_rt_Info->cross_check_cpuState(state, wos, tb_index););
 
-    g_qemu_rt_Info->sync_cpuState(wos, tb_index);
+    g_qemu_rt_Info->sync_cpuState(state, wos, tb_index);
 }
 
 void Executor::crete_abortCurrentTBExecution(klee::ExecutionState* state) {
