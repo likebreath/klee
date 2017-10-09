@@ -554,10 +554,6 @@ MemoryObject * Executor::addExternalObject(ExecutionState &state,
 extern void *__dso_handle __attribute__ ((__weak__));
 
 void Executor::initializeGlobals(ExecutionState &state) {
-#if defined(CRETE_CONFIG)
-  crete_init_symbolics(state);
-#endif
-
   Module *m = kmodule->module;
 
   if (m->getModuleInlineAsm() != "")
@@ -4133,26 +4129,6 @@ Interpreter *Interpreter::create(LLVMContext &ctx, const InterpreterOptions &opt
 #if defined(CRETE_CONFIG)
 /// crete external functions for klee
 
-/* Symbolic variables are constructed and initialized by 0s; they will be made as symbolic when
- * "__crete_make_symbolic" is invoked.
- * */
-void Executor::crete_init_symbolics(ExecutionState &state) {
-    // Create MO/OS pair for concolic variables based on the info QemuRuntimeInfo::m_concolics
-    concolics_ty temp_concolics = g_qemu_rt_Info->get_concolics();
-
-    for(concolics_ty::iterator it = temp_concolics.begin();
-            it != temp_concolics.end(); ++it) {
-        state.pushCreteConcolic(**it);
-
-        CRETE_DBG(
-        std::cerr << "[CRETE] init_qemu_memory() is invoked.\n"
-        << "concolic_name = " << (*it)->m_name
-        << ", concolic_mo->address = 0x" << std::hex << (*it)->m_guest_addr
-        << ", concolic_mo->size = " << (*it)->m_data_size << std::dec << std::endl;
-        );
-    }
-}
-
 void Executor::crete_init_special_function_handler() {
     Function* function;
 
@@ -4360,66 +4336,6 @@ bool Executor::crete_manual_disable_fork(const ExecutionState &state)
 
 /// crete internal functions
 
-/* Synchronize the memory between offline (klee) and online (qemu)
- * */
-void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
-{
-    const memoSyncTable_ty& memo_sync_table = g_qemu_rt_Info->get_memoSyncTable(tb_index);
-
-    for(memoSyncTable_ty::const_iterator it = memo_sync_table.begin();
-            it != memo_sync_table.end(); ++it ) {
-
-        uint64_t static_addr = it->first;
-        uint8_t dumped_byte_value = it->second;
-
-        MemoryObject *page_mo;
-        bool existed = memory->find_dynamic_page_mo(static_addr, page_mo);
-        assert(page_mo);
-        uint64_t in_page_offset = static_addr & PAGE_OFFSET_MASK;
-
-        if(existed) {
-            const ObjectState *page_os = state.addressSpace.findObject(page_mo);
-            assert(page_mo && page_os);
-
-            // read the current value
-            ref<Expr>  ref_current_value_byte = page_os->read8(in_page_offset);
-            if(!isa<ConstantExpr>(ref_current_value_byte)) {
-                ref_current_value_byte = state.concolics.evaluate(
-                        state.constraints.simplifyExpr(ref_current_value_byte));
-            }
-            uint8_t current_byte_value = (uint8_t)cast<ConstantExpr>(ref_current_value_byte)->getZExtValue(8);
-
-            // check-side effects
-            if(dumped_byte_value != current_byte_value) {
-                fprintf(stderr, "[CRETE ERROR] different value in crete_sync_memory()\n");
-
-                CRETE_DBG(
-                uint64_t dynamic_addr = page_mo->address + in_page_offset;
-                fprintf(stderr, "[CRETE Warning] memory side effect on 0x%p (dync:): %d => %d (potential concretization)\n",
-                        (void *)static_addr, (void *)dynamic_addr,
-                        (uint32_t)current_byte_value, (uint32_t)dumped_byte_value);
-                );
-            }
-        } else {
-            fprintf(stderr, "[CRETE ERROR] untouched memory found in crete_sync_memory()\n");
-        }
-    }
-}
-
-void Executor::crete_sync_cpu(ExecutionState& state, uint64_t tb_index)
-{
-    const MemoryObject *mo = state.crete_cpu_state;
-    assert(mo);
-    const ObjectState* os = state.addressSpace.findObject(mo);
-    assert(os);
-
-    ObjectState* wos = state.addressSpace.getWriteable(mo, os);
-
-    CRETE_CK(g_qemu_rt_Info->cross_check_cpuState(state, wos, tb_index););
-
-    g_qemu_rt_Info->sync_cpuState(state, wos, tb_index);
-}
-
 void Executor::crete_abortCurrentTBExecution(klee::ExecutionState* state) {
     klee::Executor* executor = this;
 
@@ -4587,6 +4503,7 @@ std::vector<ref<Expr> > Executor::crete_create_concolic_array(
     return result;
 }
 
+// TODO: XXX to-be-cleanup
 // Initialize cpuState based the initial cpuState dumped
 void Executor::handleCreteInitCpuState(klee::Executor* executor,
         klee::ExecutionState* state,
@@ -4610,6 +4527,7 @@ void Executor::handleCreteInitCpuState(klee::Executor* executor,
     state->crete_cpu_state = mo;
 }
 
+// TODO: XXX to-be-cleanup
 /* crete_qemu_tb_prologue:
  * 1. synchronize memory
  * 2. update the register value
@@ -4646,11 +4564,10 @@ void Executor::handleCreteQemuTbPrologue(klee::Executor* executor,
     uint64_t tb_pc_value = ce_tb_pc->getZExtValue();
     state->crete_current_tb_pc = tb_pc_value;
 
-    // synchronize memory
-    executor->crete_sync_memory(*state, tb_index_value);
-
-    //synchronize cpu regs
-    executor->crete_sync_cpu(*state, tb_index_value);
+    //cross check cpu regs
+    CRETE_CK(g_qemu_rt_Info->cross_check_cpuState(*state,
+                                                  state->addressSpace.findObject(state->crete_cpu_state),
+                                                  tb_index_value););
 
     //debug
     CRETE_DBG(
@@ -4689,13 +4606,9 @@ void Executor::handleCreteFinishReply(klee::Executor* executor,
     ConstantExpr *ce = dyn_cast<ConstantExpr>(tb_index);
     uint64_t tb_index_value = ce->getZExtValue();
 
-    const MemoryObject *mo = state->crete_cpu_state;
-    assert(mo);
-    const ObjectState* os = state->addressSpace.findObject(mo);
-    assert(os);
-
-    ObjectState* wos = state->addressSpace.getWriteable(mo, os);
-    g_qemu_rt_Info->cross_check_cpuState(*state, wos, tb_index_value);
+    g_qemu_rt_Info->cross_check_cpuState(*state,
+                                         state->addressSpace.findObject(state->crete_cpu_state),
+                                         tb_index_value);
     );
 
     CRETE_DBG_TA(assert(!state->crete_dbg_ta_fail););
@@ -4783,35 +4696,6 @@ void Executor::handleCreteMakeConolicInternal(klee::Executor* executor,
     wos->write_n(cv_in_page_offset, symb);
 
     CRETE_DBG_TA(state->crete_tb_tainted = true;);
-
-    // --------------------------------------------
-    ConcolicVariable cv = state->getFirstConcolic();
-    uint64_t static_addr = cv.m_guest_addr;
-    string name = cv.m_name;
-    uint64_t size = cv.m_data_size;
-    vector<uint8_t> concreteData = cv.m_concrete_value;
-    assert(concreteData.size() == cv.m_data_size);
-
-    if(static_addr != cv_static_addr ||
-       size != cv_size ||
-       concreteData != cv_concrete_value ||
-       name != cv_name) {
-        fprintf(stderr, "[CRETE Error] handleCreteMakeConolicInternal(): inconsistent data!\n");
-
-        fprintf(stderr, "Info from bitcode: cv_static_addr = %p, cv_size = %lu, cv_name = %s (%p), value[%lu] = (",
-                (void *)cv_static_addr, cv_size, name.c_str(), (void *)name_static_addr, cv_concrete_value.size());
-        for(uint64_t i = 0; i < cv_concrete_value.size(); ++i) {
-            fprintf(stderr, "%lx ",(uint64_t)cv_concrete_value[i]);
-        }
-        fprintf(stderr, ")\n");
-
-        fprintf(stderr, "Info from file: static_addr = %p, size = %lu, name = %s, value[%lu] = (",
-                (void *)static_addr, size, name.c_str(), concreteData.size());
-        for(uint64_t i = 0; i < concreteData.size(); ++i) {
-            fprintf(stderr, "%lx ",(uint64_t)concreteData[i]);
-        }
-        fprintf(stderr, ")\n");
-    }
 }
 
 void Executor::handleCreteAssumeBegin(klee::Executor* executor,
