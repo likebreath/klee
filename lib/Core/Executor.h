@@ -535,7 +535,6 @@ private:
 private:
   // crete internal functions
   void crete_sync_memory(ExecutionState &state, uint64_t tb_index);
-  void crete_sync_cpu(ExecutionState &state, uint64_t tb_index);
 
   MemoryObject *crete_get_global(string global_variable_name) const;
 

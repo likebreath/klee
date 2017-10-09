@@ -123,7 +123,6 @@ private:
 	// were made as symbolic by calling crete_make_concolic in qemu
 	concolics_ty m_concolics;
 
-    vector<cpuStateSyncTable_ty> m_cpuStateSyncTables;
 	memoSyncTables_ty m_memoSyncTables;
 
 	// For Streaming Tracing
@@ -150,9 +149,8 @@ public:
 
 	concolics_ty get_concolics() const;
 
-	void sync_cpuState(klee::ExecutionState &state, klee::ObjectState *wos, uint64_t tb_index);
 	void cross_check_cpuState(klee::ExecutionState &state,
-	        klee::ObjectState *wos, uint64_t tb_index);
+	        const klee::ObjectState *wos, uint64_t tb_index);
 
 	const memoSyncTable_ty& get_memoSyncTable(uint64_t tb_index);
 
@@ -185,7 +183,6 @@ private:
 	void cleanup_concolics();
 
 	void read_streamed_trace();
-	uint32_t read_cpuSyncTables();
 	uint32_t read_debug_cpuSyncTables();
 	uint32_t read_memoSyncTables();
 	void read_debug_cpuState_offsets();
@@ -198,7 +195,6 @@ private:
 	// Debugging
 	void init_debug_cpuOffsetTable();
 	void print_memoSyncTables();
-	void print_cpuSyncTable(uint64_t tb_index) const;
 
 public:
 	// <offset, <name, size> >

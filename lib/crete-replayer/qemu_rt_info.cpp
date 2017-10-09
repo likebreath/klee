@@ -34,7 +34,7 @@ QemuRuntimeInfo::~QemuRuntimeInfo()
     cleanup_concolics();
 }
 
-static void check_cpu_state(klee::ExecutionState &state, klee::ObjectState *os_current_cpu_state,
+static void check_cpu_state(klee::ExecutionState &state, const klee::ObjectState *os_current_cpu_state,
                             const vector<CPUStateElement>& correct_cpu_state, uint64_t tb_index)
 {
     bool cross_check_passed = true;
@@ -96,45 +96,6 @@ static void check_cpu_state(klee::ExecutionState &state, klee::ObjectState *os_c
     if(!cross_check_passed){
         state.print_stack();
         assert(0);
-    }
-}
-
-void QemuRuntimeInfo::sync_cpuState(klee::ExecutionState &state, klee::ObjectState *wos, uint64_t tb_index) {
-    if(tb_index >= m_streamed_tb_count) {
-        read_streamed_trace();
-        assert((m_streamed_tb_count - tb_index) == m_cpuStateSyncTables.size());
-    }
-
-    uint64_t adjusted_tb_index = tb_index - (m_streamed_tb_count - m_cpuStateSyncTables.size());
-
-    cpuStateSyncTable_ty cpuStateSyncTable = m_cpuStateSyncTables[adjusted_tb_index];
-
-    CRETE_DBG(
-    cerr << "-------------------------------------------------------\n";
-    cerr << "tb-" << dec << tb_index << ": sync_cpuState()\n";
-    );
-
-    if(!cpuStateSyncTable.first) return;
-
-    assert(!cpuStateSyncTable.second.empty());
-
-    check_cpu_state(state, wos, cpuStateSyncTable.second, tb_index);
-
-    CRETE_DBG(cerr << " concretized elements: \n";);
-    for(vector<CPUStateElement>::const_iterator it = cpuStateSyncTable.second.begin();
-            it != cpuStateSyncTable.second.end(); ++it) {
-        if(it->m_name.find("debug") != string::npos) {
-            continue;
-        }
-
-        assert(it->m_data.size() == it->m_size);
-        wos->write_n(it->m_offset,it->m_data);
-        CRETE_DBG(fprintf(stderr, "(%s:%lu): [", it->m_name.c_str(), it->m_size);
-        for(uint64_t i = 0; i < it->m_size; ++i) {
-            cerr << hex << " 0x" << (uint32_t)it->m_data[i];
-        }
-        cerr << "]\n";
-        );
     }
 }
 
@@ -313,26 +274,6 @@ void QemuRuntimeInfo::print_memoSyncTables()
 	}
 }
 
-void QemuRuntimeInfo::print_cpuSyncTable(uint64_t tb_index) const
-{
-    if(!m_cpuStateSyncTables[tb_index].first) {
-        cerr << "tb-" << dec << tb_index << ": cpuSyncTable is empty\n";
-    }
-
-    cerr << "tb-" << dec << tb_index << ": cpuSyncTable size = "
-            << m_cpuStateSyncTables[tb_index].second.size() << endl;
-
-    for(vector<CPUStateElement>::const_iterator it = m_cpuStateSyncTables[tb_index].second.begin();
-            it != m_cpuStateSyncTables[tb_index].second.end(); ++it) {
-        cerr << it->m_name << ": " << it->m_size << " bytes"
-                << " [";
-        for(uint64_t i = 0; i < it->m_size; ++i) {
-            cerr << " 0x"<< hex << (uint32_t)it->m_data[i];
-        }
-        cerr << "]\n";
-    }
-}
-
 void QemuRuntimeInfo::init_interruptStates()
 {
     ifstream i_sm("dump_qemu_interrupt_info.bin", ios_base::binary);
@@ -344,32 +285,13 @@ void QemuRuntimeInfo::init_interruptStates()
 
 void QemuRuntimeInfo::read_streamed_trace()
 {
-    uint32_t read_amt_cst = read_cpuSyncTables();
     uint32_t read_amt_dbg_cst = read_debug_cpuSyncTables();
     uint32_t read_amt_mst = read_memoSyncTables();
 
-    assert(read_amt_cst == read_amt_dbg_cst);
-    assert(read_amt_cst == read_amt_mst);
+    assert(read_amt_mst == read_amt_dbg_cst);
 
-    m_streamed_tb_count += read_amt_cst;
+    m_streamed_tb_count += read_amt_mst;
     ++m_streamed_index;
-}
-
-uint32_t QemuRuntimeInfo::read_cpuSyncTables()
-{
-    stringstream ss;
-    ss << "dump_sync_cpu_states." << m_streamed_index << ".bin";
-    ifstream i_sm(ss.str().c_str(), ios_base::binary);
-    if(!i_sm.good()) {
-        cerr << "[Crete Error] can't find file " << ss.str() << endl;
-        assert(0);
-    }
-
-    boost::archive::binary_iarchive ia(i_sm);
-    m_cpuStateSyncTables.clear();
-    ia >> m_cpuStateSyncTables;
-
-    return m_cpuStateSyncTables.size();
 }
 
 uint32_t QemuRuntimeInfo::read_debug_cpuSyncTables()
@@ -445,7 +367,7 @@ static void concretize_incorrect_cpu_element(klee::ObjectState *cpu_os,
 }
 
 void QemuRuntimeInfo::cross_check_cpuState(klee::ExecutionState &state,
-        klee::ObjectState *os, uint64_t tb_index_input) {
+        const klee::ObjectState *os, uint64_t tb_index_input) {
     if(tb_index_input == 0)
         return;
 

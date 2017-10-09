@@ -4414,20 +4414,6 @@ void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
     }
 }
 
-void Executor::crete_sync_cpu(ExecutionState& state, uint64_t tb_index)
-{
-    const MemoryObject *mo = state.crete_cpu_state;
-    assert(mo);
-    const ObjectState* os = state.addressSpace.findObject(mo);
-    assert(os);
-
-    ObjectState* wos = state.addressSpace.getWriteable(mo, os);
-
-    CRETE_CK(g_qemu_rt_Info->cross_check_cpuState(state, wos, tb_index););
-
-    g_qemu_rt_Info->sync_cpuState(state, wos, tb_index);
-}
-
 void Executor::crete_abortCurrentTBExecution(klee::ExecutionState* state) {
     klee::Executor* executor = this;
 
@@ -4657,8 +4643,10 @@ void Executor::handleCreteQemuTbPrologue(klee::Executor* executor,
     // synchronize memory
     executor->crete_sync_memory(*state, tb_index_value);
 
-    //synchronize cpu regs
-    executor->crete_sync_cpu(*state, tb_index_value);
+    //cross check cpu regs
+    CRETE_CK(g_qemu_rt_Info->cross_check_cpuState(*state,
+                                                  state->addressSpace.findObject(state->crete_cpu_state),
+                                                  tb_index_value););
 
     //debug
     CRETE_DBG(
@@ -4697,13 +4685,9 @@ void Executor::handleCreteFinishReply(klee::Executor* executor,
     ConstantExpr *ce = dyn_cast<ConstantExpr>(tb_index);
     uint64_t tb_index_value = ce->getZExtValue();
 
-    const MemoryObject *mo = state->crete_cpu_state;
-    assert(mo);
-    const ObjectState* os = state->addressSpace.findObject(mo);
-    assert(os);
-
-    ObjectState* wos = state->addressSpace.getWriteable(mo, os);
-    g_qemu_rt_Info->cross_check_cpuState(*state, wos, tb_index_value);
+    g_qemu_rt_Info->cross_check_cpuState(*state,
+                                         state->addressSpace.findObject(state->crete_cpu_state),
+                                         tb_index_value);
     );
 
     CRETE_DBG_TA(assert(!state->crete_dbg_ta_fail););
