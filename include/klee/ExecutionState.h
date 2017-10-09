@@ -200,10 +200,6 @@ public:
   // current tb_pc
   uint64_t crete_current_tb_pc;
 
-  void pushCreteConcolic(ConcolicVariable cv);
-  ConcolicVariable getFirstConcolic();
-  void printCreteConolic();
-
   bool isSymbolics(const MemoryObject *mo);
   ref<Expr> getConcreteExpr(ref<Expr> e);
 
@@ -220,8 +216,6 @@ public:
   void simplifyConstraintsWithConcolicValue();
 
 private:
-  std::deque<ConcolicVariable > creteConcolicsQueue;
-
   // trace tag
   uint64_t m_trace_tag_current_node_index;
 
