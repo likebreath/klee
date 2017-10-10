@@ -27,10 +27,6 @@ extern QemuRuntimeInfo *g_qemu_rt_Info;
 
 extern uint64_t g_test_case_count;
 
-//FIXME: xxx
-const uint64_t KLEE_ALLOC_RANGE_LOW  = 0x70000000;
-const uint64_t KLEE_ALLOC_RANGE_HIGH = 0x7FFFFFFF;
-
 /*****************************/
 /* Functions for klee */
 QemuRuntimeInfo* qemu_rt_info_initialize();
