@@ -203,6 +203,7 @@ MemoryObject *MemoryManager::allocateFixed(uint64_t address, uint64_t size,
                                            bool skip_check)
 #endif
 {
+    assert(0);
 #if !defined(CRETE_CONFIG)
     bool skip_check = false;
 #endif
@@ -265,4 +266,26 @@ uint64_t MemoryManager::get_next_address(uint64_t size) {
 
   return ret;
 }
+
+bool MemoryManager::find_dynamic_page_mo(uint64_t static_addr, MemoryObject *&ret_mo)
+{
+//    fprintf(stderr, "PAGE_SIZE = %lu, PAGE_ADDRESS_MASK = %p, PAGE_OFFSET_MASK = %p\n",
+//            (uint64_t)PAGE_SIZE, (void *)(uint64_t)PAGE_ADDRESS_MASK, (void *)(uint64_t)PAGE_OFFSET_MASK);
+
+    bool ret = true;
+    uint64_t static_page_addr = static_addr & PAGE_ADDRESS_MASK;
+
+    if(m_dyn_addr_map.find(static_page_addr) == m_dyn_addr_map.end())
+    {
+        ret = false;
+        m_dyn_addr_map[static_page_addr] = allocate(PAGE_SIZE, false, true, 0, 64);
+
+//        fprintf(stderr, "find_dynamic_page_mo(): create new page mo: static_page_addr = %p, page_mo_addr = %p\n",
+//                (void *)static_page_addr, (void *)m_dyn_addr_map[static_page_addr]->address);
+    }
+
+    ret_mo = m_dyn_addr_map[static_page_addr];
+    return ret;
+}
+
 #endif // CRETE_CONFIG

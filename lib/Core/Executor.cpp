@@ -3565,9 +3565,6 @@ void Executor::executeMemoryOperation(ExecutionState &state,
       fprintf(stderr, "[CRETE Warning] Concretization: symbolic address.\n");
       );
   }
-
-  crete_preprocess_memory_operation(state, isWrite, address,
-          value, bytes, target);
 #endif // CRETE_CONFIG
 
   // fast path: single in-bounds resolution
@@ -4142,22 +4139,21 @@ void Executor::crete_init_symbolics(ExecutionState &state) {
     // Create MO/OS pair for concolic variables based on the info QemuRuntimeInfo::m_concolics
     concolics_ty temp_concolics = g_qemu_rt_Info->get_concolics();
 
-    ObjectState  *temp_os;
-    MemoryObject *temp_mo;
     for(concolics_ty::iterator it = temp_concolics.begin();
             it != temp_concolics.end(); ++it) {
-        temp_mo = memory->allocateFixed((*it)->m_guest_addr, (*it)->m_data_size, 0, true);
-        if(temp_mo == NULL) {
+        uint64_t static_addr = (*it)->m_guest_addr;
+        uint64_t size = (*it)->m_data_size;
+
+        MemoryObject *page_mo;
+        bool existed = memory->find_dynamic_page_mo(static_addr, page_mo);
+        if(!existed)
+            ObjectState *page_os = bindObjectInState(state, page_mo, false);
+
+        if(page_mo == NULL) {
             state.print_stack();
             assert(0);
         }
 
-        temp_mo->setName((*it)->m_name);
-
-        temp_os = bindObjectInState(state, temp_mo, false);
-        temp_os->write_n(0, std::vector<uint8_t>());
-
-//        modi_objectPair temp_op(temp_mo,temp_os);
         state.pushCreteConcolic(**it);
 
         CRETE_DBG(
@@ -4251,6 +4247,16 @@ void Executor::crete_init_special_function_handler() {
         if (!function->isDeclaration())
             function->deleteBody();
     }
+
+    function = kmodule->module->getFunction("crete_get_dynamic_addr");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteGetDynamicAddr);
+        if (!function->isDeclaration())
+            function->deleteBody();
+    }
+
+
 }
 
 Executor::StatePair
@@ -4382,46 +4388,6 @@ void Executor::crete_concolic_branch(ExecutionState &state,
 
     assert(count_matched_case == 1 && "There should only be only match case.");
 }
-/*
- * Mainly to merge existing MOs, as CRETE creates memory on-the-fly
- * For read memory operation, just creat a new MO for the given address with the given size
- * if no overlapped MO was found
- */
-void Executor::crete_preprocess_memory_operation(ExecutionState &state,
-        bool isWrite,
-        ref<Expr> address,
-        ref<Expr> value,
-        unsigned bytes,
-        KInstruction *target) {
-    assert(isa<ConstantExpr>(address));
-    ConstantExpr *temp_ce =  dyn_cast<ConstantExpr>(address);
-    uint64_t temp_addr = temp_ce->getZExtValue();
-
-    std::vector<const MemoryObject *> overlapped_mos =
-            state.addressSpace.getOverlapObjects(temp_addr, bytes);
-
-    if(!overlapped_mos.empty()){
-        crete_merge_overlapped_mos(state, overlapped_mos, temp_addr, bytes, isWrite);
-    } else {
-        if(!isWrite) {
-            CRETE_DBG(
-            std::cerr << "[CRETE Error] Missing address for load MO is: "
-                      << std::hex << temp_addr << '\n' << std::dec;
-            state.print_stack();
-            );
-
-            assert(0 && "Load MO missing!\n");
-        }
-
-        // If no overlapped existing mo is found, just create a new mo for this address and size
-        MemoryObject *temp_mo = memory->allocateFixed(temp_addr, bytes, 0, true, true);
-        if(temp_mo == NULL) {
-            state.print_stack();
-            assert(0);
-        }
-        bindObjectInState(state, temp_mo, false);
-    }
-}
 
 bool Executor::crete_manual_disable_fork(const ExecutionState &state)
 {
@@ -4438,132 +4404,6 @@ bool Executor::crete_manual_disable_fork(const ExecutionState &state)
 
 /// crete internal functions
 
-/* Merge the current existed MOs with the given MO. Bytes that were not allocated will be assigned as 0.
- * mo_start_addr: the start address of the given MO
- * mo_size: the size of the given MO
- * return the merged MO
- * For read memory operation, existing MOs must cover all bytes of the given MO
- * */
-const MemoryObject *Executor::crete_merge_overlapped_mos(ExecutionState &state,
-        const std::vector<const MemoryObject *>& overlapped_mos,
-        uint64_t mo_start_addr, uint64_t mo_size, bool isWrite){
-    //The only overlapped MO covers the given MO, just return it.
-    if(overlapped_mos.front()->address <= mo_start_addr &&
-            (overlapped_mos.front()->address + overlapped_mos.front()->size)
-            >= (mo_start_addr + mo_size)) {
-        assert(overlapped_mos.size() == 1);
-        return overlapped_mos.front();
-    }
-
-    // Put overlapped MOs into a sorted map, and assure they are not from ExecutionState::symbolics
-    std::map<uint64_t, const MemoryObject *> ordered_overlapped_mos;
-    for(std::vector<const MemoryObject *>::const_iterator it = overlapped_mos.begin();
-                    it != overlapped_mos.end(); ++it) {
-        assert(!state.isSymbolics(*it) &&
-                "[CRETE ERROR] The given MO is overlapped with symbolics MO\n");
-        ordered_overlapped_mos.insert(std::make_pair((*it)->address, *it));
-    }
-
-    // Calculate the address range of existing overlapped MOs (old_mos_*) and
-    // the address range of the given MO (target_mo_*)
-    uint64_t old_mos_start_addr = ordered_overlapped_mos.begin()->second->address;
-    uint64_t old_mos_end_addr = ordered_overlapped_mos.rbegin()->second->address +
-            ordered_overlapped_mos.rbegin()->second->size;
-    uint64_t old_mos_size = old_mos_end_addr - old_mos_start_addr;
-
-    uint64_t target_mo_start_addr = mo_start_addr;
-    uint64_t target_mo_size = mo_size;
-    uint64_t target_mo_end_addr = target_mo_start_addr + target_mo_size;
-
-    // Save the original state of OSs and delete existing overlapped MO/OSs
-    std::vector< ref<Expr> > old_os_value;
-    uint64_t previous_mo_end_addr = ordered_overlapped_mos.begin()->second->address;
-
-    for(std::map<uint64_t, const MemoryObject*>::iterator it = ordered_overlapped_mos.begin();
-            it != ordered_overlapped_mos.end(); ++it) {
-        const MemoryObject *temp_mo = it->second;
-
-        if(temp_mo->address != previous_mo_end_addr) {
-            if(isWrite){
-                // For write, Make up the bytes that are not allocated in the overlapped mos
-                uint64_t makeup_size = temp_mo->address - previous_mo_end_addr;
-                assert(makeup_size > 0);
-
-                for(uint64_t i = 0; i < makeup_size; ++i){
-                    old_os_value.push_back(ConstantExpr::create(0, 8));
-                }
-            } else {
-                // For read, this indicates an missing Memory
-                CRETE_DBG(
-                std::cerr << "[CRETE Error] Missing address for load MO is: 0x"
-                          << std::hex << mo_start_addr << std::dec  << ", "
-                          <<  mo_size << "bytes\n" ;
-                state.print_stack();
-                );
-
-                assert(0 && "Load MO missing!\n");
-            }
-        }
-
-        previous_mo_end_addr = temp_mo->address + temp_mo->size;
-
-        //1. Save the original value of the existing value;
-        const ObjectState *old_os = state.addressSpace.findObject(temp_mo);
-        assert(old_os &&
-                "[CRETE ERROR] the corresponding os for a given (overlapped) mo is not found.\n");
-
-        for(unsigned int i = 0; i < old_os->size; ++i) {
-            old_os_value.push_back(old_os->read8(i));
-        }
-
-        CRETE_DBG_MEMORY(
-        uint64_t old_addr = temp_mo->address;
-        uint64_t old_size = temp_mo->size;
-        uint64_t target_addr = mo_start_addr;
-        uint64_t target_size = mo_size;
-
-        std::cerr << "[overlap mo] An existing MO is found: (0x" << std::hex << old_addr << ", 0x" << old_size
-                << "), which overlapps with new target MO: (0x" << target_addr << ", 0x" << target_size << ")\n";
-
-        string mo_info;
-        temp_mo->getAllocInfo(mo_info);
-        std::cerr << "info of overlapped mo: " << mo_info << std::endl;
-        );
-
-        //2. un-bind os/mo pair in the addressSpace of the current state
-        //  it should delete the mo/os, as the overlapped mo/os should have no other references
-        state.addressSpace.unbindObject(temp_mo);
-    }
-    assert(old_mos_size == old_os_value.size());
-
-    //3.create new mo that covers the overlapped old mos and the target mo
-    uint64_t new_mo_start_addr = old_mos_start_addr <= target_mo_start_addr ?
-            old_mos_start_addr:target_mo_start_addr;
-    uint64_t new_mo_end_addr = old_mos_end_addr >= target_mo_end_addr ?
-            old_mos_end_addr:target_mo_end_addr;
-    uint64_t new_mo_size = new_mo_end_addr - new_mo_start_addr;
-
-    CRETE_DBG_MEMORY(
-    std::cerr << "[overlap mo] new_addr = 0x" << std::hex << new_mo_start_addr
-            << ", new_size = 0x" << new_mo_size << std::dec << std::endl;
-    );
-
-    MemoryObject *new_mo = memory->allocateFixed(new_mo_start_addr, new_mo_size, 0, true);
-    if(new_mo == NULL) {
-        state.print_stack();
-        assert(0);
-    }
-
-    //4. bind new mo/os pair in current state
-    ObjectState *new_os = bindObjectInState(state, new_mo, false);
-
-    //5. restore old value to new object state
-    uint64_t new_os_offset = old_mos_start_addr - new_mo_start_addr;
-    new_os->write_n(new_os_offset, old_os_value);
-
-    return new_mo;
-}
-
 /* Synchronize the memory between offline (klee) and online (qemu)
  * */
 void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
@@ -4573,19 +4413,20 @@ void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
     for(memoSyncTable_ty::const_iterator it = memo_sync_table.begin();
             it != memo_sync_table.end(); ++it ) {
 
-        uint64_t addr = it->first;
+        uint64_t static_addr = it->first;
         uint8_t dumped_byte_value = it->second;
 
-        ObjectPair res;
-        bool found = state.addressSpace.resolveOne(ConstantExpr::alloc(addr, Expr::Int64), res);
-        if(found) {
-            const MemoryObject *mo = res.first;
-            const ObjectState *os = res.second;
-            assert(mo && os);
-            assert(addr >= mo->address);
+        MemoryObject *page_mo;
+        bool existed = memory->find_dynamic_page_mo(static_addr, page_mo);
+        assert(page_mo);
+        uint64_t in_page_offset = static_addr & PAGE_OFFSET_MASK;
+
+        if(existed) {
+            const ObjectState *page_os = state.addressSpace.findObject(page_mo);
+            assert(page_mo && page_os);
 
             // read the current value
-            ref<Expr>  ref_current_value_byte = os->read8(addr - mo->address);
+            ref<Expr>  ref_current_value_byte = page_os->read8(in_page_offset);
             if(!isa<ConstantExpr>(ref_current_value_byte)) {
                 ref_current_value_byte = state.concolics.evaluate(
                         state.constraints.simplifyExpr(ref_current_value_byte));
@@ -4594,22 +4435,19 @@ void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
 
             // check-side effects
             if(dumped_byte_value != current_byte_value) {
-                ObjectState* wos = state.addressSpace.getWriteable(mo, os);
-                wos->write8(addr - mo->address, dumped_byte_value);
+                ObjectState* wos = state.addressSpace.getWriteable(page_mo, page_os);
+                wos->write8(in_page_offset, dumped_byte_value);
 
                 CRETE_DBG(
-                fprintf(stderr, "[CRETE Warning] memory side effect on 0x%p: %d => %d (potential concretization)\n",
-                        (void *)addr, (uint32_t)current_byte_value, (uint32_t)dumped_byte_value);
+                uint64_t dynamic_addr = page_mo->address + in_page_offset;
+                fprintf(stderr, "[CRETE Warning] memory side effect on 0x%p (dync:): %d => %d (potential concretization)\n",
+                        (void *)static_addr, (void *)dynamic_addr,
+                        (uint32_t)current_byte_value, (uint32_t)dumped_byte_value);
                 );
             }
         } else {
-            MemoryObject *temp_mo = memory->allocateFixed(addr, 1, 0, true, true);
-            if(temp_mo == NULL) {
-                state.print_stack();
-                assert(0);
-            }
-            ObjectState *temp_os = bindObjectInState(state, temp_mo, false);
-            temp_os->write8(0, dumped_byte_value);
+            ObjectState *page_os = bindObjectInState(state, page_mo, false);
+            page_os->write8(in_page_offset, dumped_byte_value);
         }
     }
 }
@@ -4917,7 +4755,7 @@ void Executor::handleCreteMakeSymbolic(klee::Executor* executor,
           klee::KInstruction* target,
           std::vector<klee::ref<klee::Expr> > &args) {
     ConcolicVariable cv = state->getFirstConcolic();
-    uint64_t addr = cv.m_guest_addr;
+    uint64_t static_addr = cv.m_guest_addr;
     string name = cv.m_name;
     uint64_t size = cv.m_data_size;
     vector<uint8_t> concreteData = cv.m_concrete_value;
@@ -4927,19 +4765,18 @@ void Executor::handleCreteMakeSymbolic(klee::Executor* executor,
     vector<ref<Expr> > symb = executor->crete_create_concolic_array(state, name, size, concreteData);
 
     // 2. write symbolic values to existing mo
-    ObjectPair res;
-//    res = state->addressSpace.findObject(addr);
-    bool found = state->addressSpace.resolveOne(ConstantExpr::alloc(addr, Expr::Int64), res);
-    assert(found && "crete_make_symbolic is failed\n");
+    MemoryObject *page_mo;
+    bool existed = executor->memory->find_dynamic_page_mo(static_addr, page_mo);
+    assert(existed);
 
-    const MemoryObject *mo = res.first;
-    const ObjectState *os = res.second;
-    assert(mo && os);
-    assert(mo->address == addr);
-    assert(os->size == symb.size());
+    const ObjectState *page_os = state->addressSpace.findObject(page_mo);
+    assert(page_mo && page_os);
 
-    ObjectState* wos = state->addressSpace.getWriteable(mo, os);
-    wos->write_n(0, symb);
+    uint64_t in_page_offset = static_addr & PAGE_OFFSET_MASK;
+    assert(page_mo->size > (in_page_offset + size));
+    ObjectState* wos = state->addressSpace.getWriteable(page_mo, page_os);
+
+    wos->write_n(in_page_offset, symb);
 
     CRETE_DBG_TA(state->crete_tb_tainted = true;);
 }
@@ -4986,6 +4823,35 @@ void Executor::handleCreteDebugCapture(klee::Executor* executor,
           std::vector<klee::ref<klee::Expr> > &args)
 {
     // Just need a stub. Do nothing. Everything is done on QEMU side.
+}
+
+void Executor::handleCreteGetDynamicAddr(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args)
+{
+    assert(args.size() == 1);
+
+    ref<Expr> ptr_static_addr= args[0];
+
+    if (!isa<ConstantExpr>(ptr_static_addr)){
+          ref<Expr> sym_address = state->constraints.simplifyExpr(ptr_static_addr);
+          ptr_static_addr = state->concolics.evaluate(sym_address);
+    }
+
+    uint64_t static_addr = dyn_cast<ConstantExpr>(ptr_static_addr)->getZExtValue();
+    MemoryObject *page_mo;
+    bool existed = executor->memory->find_dynamic_page_mo(static_addr, page_mo);
+
+    if(!existed)
+        ObjectState *page_os = executor->bindObjectInState(*state, page_mo, false);
+
+    uint64_t dynamic_addr = page_mo->address + (static_addr & PAGE_OFFSET_MASK);
+
+//    fprintf(stderr, "handleCreteGetDynamicAddr(): static addr = %p, dynamic_addr = %p\n",
+//            (void *)static_addr, (void *)dynamic_addr);
+
+    executor->bindLocal(target, *state, ConstantExpr::create(dynamic_addr, 64));
 }
 
 /* Handler to replay generic interrupt:

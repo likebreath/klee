@@ -13,6 +13,15 @@
 #include <set>
 #include <stdint.h>
 
+#if defined(CRETE_CONFIG)
+
+#define PAGE_ALIGN_BITS     (12)
+#define PAGE_SIZE           (1<<PAGE_ALIGN_BITS)
+#define PAGE_ADDRESS_MASK   (0xffffffffffffffffLL << PAGE_ALIGN_BITS)
+#define PAGE_OFFSET_MASK    (~PAGE_ADDRESS_MASK)
+
+#endif //defined(CRETE_CONFIG)
+
 namespace llvm {
 class Value;
 }
@@ -64,6 +73,12 @@ public:
     uint64_t next_alloc_address;
 
     uint64_t get_next_address(uint64_t size);
+
+    //  <static_addr, MemoryObject (with dynamic address)>
+    map<uint64_t, MemoryObject *> m_dyn_addr_map;
+
+  public:
+    bool find_dynamic_page_mo(uint64_t static_addr, MemoryObject *&ret_mo);
 #endif
 };
 
