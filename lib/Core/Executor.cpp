@@ -4273,12 +4273,16 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
 
     Executor::StatePair branches;
     // Fork now is only disabled when handling crete_assume()
+    bool forked = false;
     if(current.crete_fork_enabled && !crete_manual_disable_fork(current))
     {
-        // Only forks for the not-explored node
+        // Only fork if the branch:
+        // 1. is from captured instruction sequence (such as TB from qemu, branches in dependency libraries won't fork)
+        // 2. is not explored( from the not-explored node)
         if(check_trace_tag && !explored_node)
         {
             branches = fork(current, condition, false);
+            forked = true;
         }
     }
 
@@ -4307,6 +4311,21 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
         }
     }
 
+    // For branches not invoking fork, just take the "right" path based on concrete value (not add constraint)
+    if(!forked)
+    {
+        if (condition_value->isTrue()) {
+            branches.first = &current;
+            branches.second = NULL;
+        } else {
+            branches.first = NULL;
+            branches.second = &current;
+        }
+
+        return branches;
+    }
+
+    // if(forked) ...
     if(trueState && falseState){
         if (condition_value->isTrue()) {
             terminateStateOnExit(*falseState);
