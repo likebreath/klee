@@ -99,40 +99,6 @@ static void check_cpu_state(klee::ExecutionState &state, const klee::ObjectState
     }
 }
 
-const memoSyncTable_ty& QemuRuntimeInfo::get_memoSyncTable(uint64_t tb_index)
-{
-    if(tb_index >= m_streamed_tb_count)
-    {
-        read_streamed_trace();
-        assert((m_streamed_tb_count - tb_index) == m_memoSyncTables.size());
-    }
-
-    uint64_t adjusted_tb_index = tb_index - (m_streamed_tb_count - m_memoSyncTables.size());
-    assert(adjusted_tb_index < m_memoSyncTables.size());
-
-    return m_memoSyncTables[adjusted_tb_index];
-}
-
-void QemuRuntimeInfo::printMemoSyncTable(uint64_t tb_index)
-{
-	memoSyncTable_ty temp_mst = m_memoSyncTables[tb_index];
-
-	cerr << "memoSyncTable content of index " << dec << tb_index << ": ";
-
-	if(temp_mst.empty()){
-		cerr << " NULL\n";
-	} else {
-		cerr << "size = " << temp_mst.size() << ":\n";
-		for(memoSyncTable_ty::iterator m_it = temp_mst.begin();
-				m_it != temp_mst.end(); ++m_it){
-
-			cerr << hex << "0x" << m_it->first << ": (0x " << m_it->second << "); ";
-		}
-
-		cerr << dec << endl;
-	}
-}
-
 concolics_ty QemuRuntimeInfo::get_concolics() const
 {
 	return m_concolics;
@@ -253,27 +219,6 @@ void QemuRuntimeInfo::cleanup_concolics()
 	}
 }
 
-void QemuRuntimeInfo::print_memoSyncTables()
-{
-	uint64_t temp_tb_count = 0;
-	cerr << "[Memo Sync Table]\n";
-	for(memoSyncTables_ty::const_iterator it = m_memoSyncTables.begin();
-			it != m_memoSyncTables.end(); ++it){
-		if(it->empty()){
-			cerr << "tb_count: " << dec << temp_tb_count++ << ": NULL\n";
-		} else {
-			cerr << "tb_count: " << dec << temp_tb_count++
-					<< ", size = " << it->size() << ": ";
-			for(memoSyncTable_ty::const_iterator m_it = it->begin();
-					m_it != it->end(); ++m_it){
-				cerr << hex << "0x" << m_it->first << ": (0x " << (uint64_t)m_it->second  << "); ";
-			}
-
-			cerr << dec << endl;
-		}
-	}
-}
-
 void QemuRuntimeInfo::init_interruptStates()
 {
     ifstream i_sm("dump_qemu_interrupt_info.bin", ios_base::binary);
@@ -286,11 +231,8 @@ void QemuRuntimeInfo::init_interruptStates()
 void QemuRuntimeInfo::read_streamed_trace()
 {
     uint32_t read_amt_dbg_cst = read_debug_cpuSyncTables();
-    uint32_t read_amt_mst = read_memoSyncTables();
 
-    assert(read_amt_mst == read_amt_dbg_cst);
-
-    m_streamed_tb_count += read_amt_mst;
+    m_streamed_tb_count += read_amt_dbg_cst;
     ++m_streamed_index;
 }
 
@@ -314,23 +256,6 @@ uint32_t QemuRuntimeInfo::read_debug_cpuSyncTables()
     });
 
     return m_debug_cpuStateSyncTables.size();
-}
-
-uint32_t QemuRuntimeInfo::read_memoSyncTables()
-{
-    stringstream ss;
-    ss << "dump_new_sync_memos." << m_streamed_index << ".bin";
-    ifstream i_sm(ss.str().c_str(), ios_base::binary);
-    if(!i_sm.good()) {
-        cerr << "[Crete Error] can't find file " << ss.str() << endl;
-        assert(0);
-    }
-
-    boost::archive::binary_iarchive ia(i_sm);
-    m_memoSyncTables.clear();
-    ia >> m_memoSyncTables;
-
-    return m_memoSyncTables.size();
 }
 
 void QemuRuntimeInfo::read_debug_cpuState_offsets()

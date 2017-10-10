@@ -108,9 +108,6 @@ struct QemuInterruptInfo {
     }
 };
 
-typedef vector< pair<uint64_t, uint8_t> > memoSyncTable_ty;
-typedef vector<memoSyncTable_ty> memoSyncTables_ty;
-
 // bool: valid table or not
 // vector<>: contents
 typedef pair<bool, vector<CPUStateElement> > cpuStateSyncTable_ty;
@@ -122,8 +119,6 @@ private:
 	// The sequence of concolic variables here is the same as how they
 	// were made as symbolic by calling crete_make_concolic in qemu
 	concolics_ty m_concolics;
-
-	memoSyncTables_ty m_memoSyncTables;
 
 	// For Streaming Tracing
     uint64_t m_streamed_tb_count;
@@ -152,11 +147,8 @@ public:
 	void cross_check_cpuState(klee::ExecutionState &state,
 	        const klee::ObjectState *wos, uint64_t tb_index);
 
-	const memoSyncTable_ty& get_memoSyncTable(uint64_t tb_index);
-
 	// For Debugging
 	QemuInterruptInfo get_qemuInterruptInfo(uint64_t tb_index);
-	void printMemoSyncTable(uint64_t tb_index);
 
 	void update_qemu_CPUState(klee::ObjectState *wos,
 	        uint64_t tb_index)
@@ -184,7 +176,6 @@ private:
 
 	void read_streamed_trace();
 	uint32_t read_debug_cpuSyncTables();
-	uint32_t read_memoSyncTables();
 	void read_debug_cpuState_offsets();
 
 	void init_interruptStates();
@@ -194,7 +185,6 @@ private:
 
 	// Debugging
 	void init_debug_cpuOffsetTable();
-	void print_memoSyncTables();
 
 public:
 	// <offset, <name, size> >

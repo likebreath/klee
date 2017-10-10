@@ -4368,52 +4368,6 @@ bool Executor::crete_manual_disable_fork(const ExecutionState &state)
 
 /// crete internal functions
 
-/* Synchronize the memory between offline (klee) and online (qemu)
- * */
-void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
-{
-    const memoSyncTable_ty& memo_sync_table = g_qemu_rt_Info->get_memoSyncTable(tb_index);
-
-    for(memoSyncTable_ty::const_iterator it = memo_sync_table.begin();
-            it != memo_sync_table.end(); ++it ) {
-
-        uint64_t static_addr = it->first;
-        uint8_t dumped_byte_value = it->second;
-
-        MemoryObject *page_mo;
-        bool existed = memory->find_dynamic_page_mo(static_addr, page_mo);
-        assert(page_mo);
-        uint64_t in_page_offset = static_addr & PAGE_OFFSET_MASK;
-
-        if(existed) {
-            const ObjectState *page_os = state.addressSpace.findObject(page_mo);
-            assert(page_mo && page_os);
-
-            // read the current value
-            ref<Expr>  ref_current_value_byte = page_os->read8(in_page_offset);
-            if(!isa<ConstantExpr>(ref_current_value_byte)) {
-                ref_current_value_byte = state.concolics.evaluate(
-                        state.constraints.simplifyExpr(ref_current_value_byte));
-            }
-            uint8_t current_byte_value = (uint8_t)cast<ConstantExpr>(ref_current_value_byte)->getZExtValue(8);
-
-            // check-side effects
-            if(dumped_byte_value != current_byte_value) {
-                fprintf(stderr, "[CRETE ERROR] different value in crete_sync_memory()\n");
-
-                CRETE_DBG(
-                uint64_t dynamic_addr = page_mo->address + in_page_offset;
-                fprintf(stderr, "[CRETE Warning] memory side effect on 0x%p (dync:): %d => %d (potential concretization)\n",
-                        (void *)static_addr, (void *)dynamic_addr,
-                        (uint32_t)current_byte_value, (uint32_t)dumped_byte_value);
-                );
-            }
-        } else {
-            fprintf(stderr, "[CRETE ERROR] untouched memory found in crete_sync_memory()\n");
-        }
-    }
-}
-
 void Executor::crete_abortCurrentTBExecution(klee::ExecutionState* state) {
     klee::Executor* executor = this;
 
@@ -4639,9 +4593,6 @@ void Executor::handleCreteQemuTbPrologue(klee::Executor* executor,
     ConstantExpr *ce_tb_pc = dyn_cast<ConstantExpr>(tb_pc);
     uint64_t tb_pc_value = ce_tb_pc->getZExtValue();
     state->crete_current_tb_pc = tb_pc_value;
-
-    // synchronize memory
-    executor->crete_sync_memory(*state, tb_index_value);
 
     //cross check cpu regs
     CRETE_CK(g_qemu_rt_Info->cross_check_cpuState(*state,
