@@ -4435,8 +4435,7 @@ void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
 
             // check-side effects
             if(dumped_byte_value != current_byte_value) {
-                ObjectState* wos = state.addressSpace.getWriteable(page_mo, page_os);
-                wos->write8(in_page_offset, dumped_byte_value);
+                fprintf(stderr, "[CRETE ERROR] different value in crete_sync_memory()\n");
 
                 CRETE_DBG(
                 uint64_t dynamic_addr = page_mo->address + in_page_offset;
@@ -4446,8 +4445,7 @@ void Executor::crete_sync_memory(ExecutionState &state, uint64_t tb_index)
                 );
             }
         } else {
-            ObjectState *page_os = bindObjectInState(state, page_mo, false);
-            page_os->write8(in_page_offset, dumped_byte_value);
+            fprintf(stderr, "[CRETE ERROR] untouched memory found in crete_sync_memory()\n");
         }
     }
 }
