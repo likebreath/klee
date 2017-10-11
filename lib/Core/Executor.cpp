@@ -4141,19 +4141,6 @@ void Executor::crete_init_symbolics(ExecutionState &state) {
 
     for(concolics_ty::iterator it = temp_concolics.begin();
             it != temp_concolics.end(); ++it) {
-        uint64_t static_addr = (*it)->m_guest_addr;
-        uint64_t size = (*it)->m_data_size;
-
-        MemoryObject *page_mo;
-        bool existed = memory->find_dynamic_page_mo(static_addr, page_mo);
-        if(!existed)
-            ObjectState *page_os = bindObjectInState(state, page_mo, false);
-
-        if(page_mo == NULL) {
-            state.print_stack();
-            assert(0);
-        }
-
         state.pushCreteConcolic(**it);
 
         CRETE_DBG(
@@ -4192,10 +4179,10 @@ void Executor::crete_init_special_function_handler() {
             function->deleteBody();
     }
 
-    function = kmodule->module->getFunction("helper_crete_make_symbolic");
+    function = kmodule->module->getFunction("helper_crete_make_concolic_internal");
     if(function)
     {
-        specialFunctionHandler->addUHandler(function, handleCreteMakeSymbolic);
+        specialFunctionHandler->addUHandler(function, handleCreteMakeConolicInternal);
         if (!function->isDeclaration())
             function->deleteBody();
     }
@@ -4748,10 +4735,87 @@ void Executor::handleCreteFinishReply(klee::Executor* executor,
 }
 
 
-void Executor::handleCreteMakeSymbolic(klee::Executor* executor,
+void Executor::handleCreteMakeConolicInternal(klee::Executor* executor,
           klee::ExecutionState* state,
           klee::KInstruction* target,
           std::vector<klee::ref<klee::Expr> > &args) {
+    assert(args.size() == 3);
+
+    ref<Expr> expr_guest_addr = args[0];
+    ref<Expr> expr_size = args[1];
+    ref<Expr> expr_name_guest_addr = args[2];
+
+    assert(isa<ConstantExpr>(expr_guest_addr));
+    assert(isa<ConstantExpr>(expr_size));
+    assert(isa<ConstantExpr>(expr_name_guest_addr));
+
+    uint64_t cv_static_addr = dyn_cast<ConstantExpr>(expr_guest_addr)->getZExtValue();
+    uint64_t cv_size = dyn_cast<ConstantExpr>(expr_size)->getZExtValue();
+    uint64_t name_static_addr = dyn_cast<ConstantExpr>(expr_name_guest_addr)->getZExtValue();
+
+    // 1. read concrete/seed values of concolic variable (and its name)
+    vector<uint8_t> cv_concrete_value;
+    cv_concrete_value.reserve(cv_size);
+
+    MemoryObject *cv_page_mo;
+    bool cv_existed = executor->memory->find_dynamic_page_mo(cv_static_addr, cv_page_mo);
+    if(!cv_existed)
+    {
+        fprintf(stderr, "[CRETE ERROR] Memory page for concolic variableis not created: "
+                "check whether crete_make_concolic_internal() is captured in the bitcode.\n");
+    }
+    assert(cv_existed);
+
+    const ObjectState *cv_page_os = state->addressSpace.findObject(cv_page_mo);
+    assert(cv_page_mo && cv_page_os);
+
+    uint64_t cv_in_page_offset = cv_static_addr & PAGE_OFFSET_MASK;
+    assert(cv_page_mo->size > (cv_in_page_offset + cv_size));
+
+    for(uint64_t i = 0; i < cv_size; ++i)
+    {
+        ref<ConstantExpr> expr_byte = dyn_cast<ConstantExpr>(cv_page_os->read8(cv_in_page_offset + i));
+        cv_concrete_value.push_back(expr_byte->getZExtValue(8));
+    }
+
+    vector<uint8_t> name_value;
+
+    MemoryObject *name_page_mo;
+    bool name_existed = executor->memory->find_dynamic_page_mo(name_static_addr, name_page_mo);
+    if(!name_existed)
+    {
+        fprintf(stderr, "[CRETE ERROR] Memory page for concolic variable name is not created: "
+                "check whether crete_make_concolic_internal() is captured in the bitcode.\n");
+    }
+    assert(name_existed);
+
+    const ObjectState *name_page_os = state->addressSpace.findObject(name_page_mo);
+    assert(name_page_mo && name_page_os);
+
+    uint64_t name_in_page_offset = name_static_addr & PAGE_OFFSET_MASK;
+
+    for(uint64_t i = 0 ;; ++i)
+    {
+        ref<ConstantExpr> expr_byte = dyn_cast<ConstantExpr>(name_page_os->read8(name_in_page_offset + i));
+        uint8_t byte_value = expr_byte->getZExtValue(8);
+        if(byte_value == '\0')
+        {
+            break;
+        }
+        name_value.push_back(byte_value);
+    }
+
+    // 2. createConoclicArray, which will create dummy mo for  state.symbolics
+    string cv_name(name_value.begin(), name_value.end());
+    vector<ref<Expr> > symb = executor->crete_create_concolic_array(state, cv_name, cv_size, cv_concrete_value);
+
+    // 3. write symbolic values to existing mo
+    ObjectState* wos = state->addressSpace.getWriteable(cv_page_mo, cv_page_os);
+    wos->write_n(cv_in_page_offset, symb);
+
+    CRETE_DBG_TA(state->crete_tb_tainted = true;);
+
+    // --------------------------------------------
     ConcolicVariable cv = state->getFirstConcolic();
     uint64_t static_addr = cv.m_guest_addr;
     string name = cv.m_name;
@@ -4759,24 +4823,26 @@ void Executor::handleCreteMakeSymbolic(klee::Executor* executor,
     vector<uint8_t> concreteData = cv.m_concrete_value;
     assert(concreteData.size() == cv.m_data_size);
 
-    // 1. createConoclicArray, which will create dummy mo for  state.symbolics
-    vector<ref<Expr> > symb = executor->crete_create_concolic_array(state, name, size, concreteData);
+    if(static_addr != cv_static_addr ||
+       size != cv_size ||
+       concreteData != cv_concrete_value ||
+       name != cv_name) {
+        fprintf(stderr, "[CRETE Error] handleCreteMakeConolicInternal(): inconsistent data!\n");
 
-    // 2. write symbolic values to existing mo
-    MemoryObject *page_mo;
-    bool existed = executor->memory->find_dynamic_page_mo(static_addr, page_mo);
-    assert(existed);
+        fprintf(stderr, "Info from bitcode: cv_static_addr = %p, cv_size = %lu, cv_name = %s (%p), value[%lu] = (",
+                (void *)cv_static_addr, cv_size, name.c_str(), (void *)name_static_addr, cv_concrete_value.size());
+        for(uint64_t i = 0; i < cv_concrete_value.size(); ++i) {
+            fprintf(stderr, "%lx ",(uint64_t)cv_concrete_value[i]);
+        }
+        fprintf(stderr, ")\n");
 
-    const ObjectState *page_os = state->addressSpace.findObject(page_mo);
-    assert(page_mo && page_os);
-
-    uint64_t in_page_offset = static_addr & PAGE_OFFSET_MASK;
-    assert(page_mo->size > (in_page_offset + size));
-    ObjectState* wos = state->addressSpace.getWriteable(page_mo, page_os);
-
-    wos->write_n(in_page_offset, symb);
-
-    CRETE_DBG_TA(state->crete_tb_tainted = true;);
+        fprintf(stderr, "Info from file: static_addr = %p, size = %lu, name = %s, value[%lu] = (",
+                (void *)static_addr, size, name.c_str(), concreteData.size());
+        for(uint64_t i = 0; i < concreteData.size(); ++i) {
+            fprintf(stderr, "%lx ",(uint64_t)concreteData[i]);
+        }
+        fprintf(stderr, ")\n");
+    }
 }
 
 void Executor::handleCreteAssumeBegin(klee::Executor* executor,
