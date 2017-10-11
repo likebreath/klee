@@ -554,10 +554,6 @@ MemoryObject * Executor::addExternalObject(ExecutionState &state,
 extern void *__dso_handle __attribute__ ((__weak__));
 
 void Executor::initializeGlobals(ExecutionState &state) {
-#if defined(CRETE_CONFIG)
-  crete_init_symbolics(state);
-#endif
-
   Module *m = kmodule->module;
 
   if (m->getModuleInlineAsm() != "")
@@ -4133,26 +4129,6 @@ Interpreter *Interpreter::create(LLVMContext &ctx, const InterpreterOptions &opt
 #if defined(CRETE_CONFIG)
 /// crete external functions for klee
 
-/* Symbolic variables are constructed and initialized by 0s; they will be made as symbolic when
- * "__crete_make_symbolic" is invoked.
- * */
-void Executor::crete_init_symbolics(ExecutionState &state) {
-    // Create MO/OS pair for concolic variables based on the info QemuRuntimeInfo::m_concolics
-    concolics_ty temp_concolics = g_qemu_rt_Info->get_concolics();
-
-    for(concolics_ty::iterator it = temp_concolics.begin();
-            it != temp_concolics.end(); ++it) {
-        state.pushCreteConcolic(**it);
-
-        CRETE_DBG(
-        std::cerr << "[CRETE] init_qemu_memory() is invoked.\n"
-        << "concolic_name = " << (*it)->m_name
-        << ", concolic_mo->address = 0x" << std::hex << (*it)->m_guest_addr
-        << ", concolic_mo->size = " << (*it)->m_data_size << std::dec << std::endl;
-        );
-    }
-}
-
 void Executor::crete_init_special_function_handler() {
     Function* function;
 
@@ -4535,6 +4511,7 @@ std::vector<ref<Expr> > Executor::crete_create_concolic_array(
     return result;
 }
 
+// TODO: XXX to-be-cleanup
 // Initialize cpuState based the initial cpuState dumped
 void Executor::handleCreteInitCpuState(klee::Executor* executor,
         klee::ExecutionState* state,
@@ -4558,6 +4535,7 @@ void Executor::handleCreteInitCpuState(klee::Executor* executor,
     state->crete_cpu_state = mo;
 }
 
+// TODO: XXX to-be-cleanup
 /* crete_qemu_tb_prologue:
  * 1. synchronize memory
  * 2. update the register value
@@ -4726,35 +4704,6 @@ void Executor::handleCreteMakeConolicInternal(klee::Executor* executor,
     wos->write_n(cv_in_page_offset, symb);
 
     CRETE_DBG_TA(state->crete_tb_tainted = true;);
-
-    // --------------------------------------------
-    ConcolicVariable cv = state->getFirstConcolic();
-    uint64_t static_addr = cv.m_guest_addr;
-    string name = cv.m_name;
-    uint64_t size = cv.m_data_size;
-    vector<uint8_t> concreteData = cv.m_concrete_value;
-    assert(concreteData.size() == cv.m_data_size);
-
-    if(static_addr != cv_static_addr ||
-       size != cv_size ||
-       concreteData != cv_concrete_value ||
-       name != cv_name) {
-        fprintf(stderr, "[CRETE Error] handleCreteMakeConolicInternal(): inconsistent data!\n");
-
-        fprintf(stderr, "Info from bitcode: cv_static_addr = %p, cv_size = %lu, cv_name = %s (%p), value[%lu] = (",
-                (void *)cv_static_addr, cv_size, name.c_str(), (void *)name_static_addr, cv_concrete_value.size());
-        for(uint64_t i = 0; i < cv_concrete_value.size(); ++i) {
-            fprintf(stderr, "%lx ",(uint64_t)cv_concrete_value[i]);
-        }
-        fprintf(stderr, ")\n");
-
-        fprintf(stderr, "Info from file: static_addr = %p, size = %lu, name = %s, value[%lu] = (",
-                (void *)static_addr, size, name.c_str(), concreteData.size());
-        for(uint64_t i = 0; i < concreteData.size(); ++i) {
-            fprintf(stderr, "%lx ",(uint64_t)concreteData[i]);
-        }
-        fprintf(stderr, ")\n");
-    }
 }
 
 void Executor::handleCreteAssumeBegin(klee::Executor* executor,

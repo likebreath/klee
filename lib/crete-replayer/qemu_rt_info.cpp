@@ -24,14 +24,13 @@ QemuRuntimeInfo::QemuRuntimeInfo()
     init_interruptStates();
 
     // not-streamed
-	init_concolics();
+    init_trace_tag();
 
-	CRETE_CK(read_debug_cpuState_offsets(););
+    CRETE_CK(read_debug_cpuState_offsets(););
 }
 
 QemuRuntimeInfo::~QemuRuntimeInfo()
 {
-    cleanup_concolics();
 }
 
 static void check_cpu_state(klee::ExecutionState &state, const klee::ObjectState *os_current_cpu_state,
@@ -99,101 +98,16 @@ static void check_cpu_state(klee::ExecutionState &state, const klee::ObjectState
     }
 }
 
-concolics_ty QemuRuntimeInfo::get_concolics() const
-{
-	return m_concolics;
-}
-
-void QemuRuntimeInfo::check_file_symbolics()
-{
-    ifstream ifs("dump_mo_symbolics.txt", ios_base::binary);
-    vector<string> symbolics;
-    string symbolic_entry;
-    while(getline(ifs, symbolic_entry, '\n')) {
-    	symbolics.push_back(symbolic_entry);
-    }
-
-    ifs.close();
-
-    set<string> unique_symbolics;
-    vector<string> output_symbolics;
-    for(vector<string>::iterator i = symbolics.begin();
-    		i != symbolics.end(); ++i) {
-    	if(unique_symbolics.insert(*i).second){
-    		output_symbolics.push_back(*i);
-    	}
-    }
-
-    ofstream ofs("dump_mo_symbolics.txt", ios_base::binary);
-    for(vector<string>::iterator i = output_symbolics.begin();
-        		i != output_symbolics.end(); ++i) {
-    	ofs << *i << '\n';
-    }
-    ofs.close();
-}
-
 //Get the information of concolic variables from file "dump_mo_symbolics" and "concrete_inputs.bin"
-void QemuRuntimeInfo::init_concolics()
+void QemuRuntimeInfo::init_trace_tag()
 {
     using namespace crete;
-
-    check_file_symbolics();
 
     ifstream inputs("concrete_inputs.bin", ios_base::in | ios_base::binary);
     assert(inputs && "failed to open concrete_inputs file!");
     const TestCase tc = read_serialized(inputs);
 
     m_base_tc_issue_index = tc.get_issue_index();
-
-    // Get the concrete value of conoclic variables and put them in a map indexed by name
-    vector<TestCaseElement> tc_elements = tc.get_elements();
-    map<string, cv_concrete_ty> map_concrete_value;
-    for(vector<TestCaseElement>::const_iterator it = tc_elements.begin();
-    		it != tc_elements.end(); ++it) {
-    	string c_name(it->name.begin(), it->name.end());
-    	cv_concrete_ty pair_concrete_value(it->data_size,
-    			it->data);
-    	map_concrete_value.insert(pair<string, cv_concrete_ty>(c_name,
-    			pair_concrete_value));
-    }
-    assert(map_concrete_value.size() == tc_elements.size());
-
-    ifstream ifs("dump_mo_symbolics.txt");
-    assert(ifs && "failed to open dump_mo_symbolics file!");
-
-    string name;
-    vector<uint8_t> concrete_value;
-    uint64_t data_size;
-    uint64_t guest_addr;
-    uint64_t host_addr;
-
-    uint64_t name_addr;
-    uint64_t fake_val;
-
-    map<string, cv_concrete_ty>::iterator map_it;
-    ConcolicVariable *cv;
-    string line;
-
-    while(getline(ifs, line)) {
-        stringstream sym_ss(line);
-        sym_ss >> name;
-        sym_ss >> name_addr;
-        sym_ss >> fake_val;
-        sym_ss >> data_size;
-        sym_ss >> guest_addr;
-        sym_ss >> host_addr;
-
-        map_it = map_concrete_value.find(name);
-        assert(map_it != map_concrete_value.end() &&
-        		"concrete value for a concolic variable is not found!\n");
-
-        concrete_value = map_it->second.second;
-        data_size= map_it->second.first;
-
-        cv = new ConcolicVariable(name, concrete_value, data_size,
-        		guest_addr, host_addr);
-        m_concolics.push_back(cv);
-    }
 
     m_trace_tag_explored = tc.get_traceTag_explored_nodes();
     m_trace_tag_semi_explored = tc.get_traceTag_semi_explored_node();
@@ -208,15 +122,6 @@ void QemuRuntimeInfo::init_concolics()
     fprintf(stderr, "m_trace_tag_new:\n");
     crete::debug::print_trace_tag(m_trace_tag_new);
     );
-}
-
-void QemuRuntimeInfo::cleanup_concolics()
-{
-	while(!m_concolics.empty()){
-		ConcolicVariable *ptr_cv = m_concolics.back();
-		m_concolics.pop_back();
-		delete ptr_cv;
-	}
 }
 
 void QemuRuntimeInfo::init_interruptStates()

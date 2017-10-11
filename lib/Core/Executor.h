@@ -520,8 +520,6 @@ public:
 #if defined(CRETE_CONFIG)
 private:
   // crete external functions invoked by klee
-  void crete_init_symbolics(ExecutionState &state);
-
   void crete_init_special_function_handler();
 
   StatePair crete_concolic_fork(ExecutionState &current, ref<Expr> condition);
@@ -534,8 +532,6 @@ private:
 
 private:
   // crete internal functions
-  MemoryObject *crete_get_global(string global_variable_name) const;
-
   void crete_abortCurrentTBExecution(klee::ExecutionState* state);
 
   virtual bool crete_getConcolicSolution(const ExecutionState &state,

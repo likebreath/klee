@@ -158,7 +158,6 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     crete_tb_tainted(state.crete_tb_tainted),
     crete_dbg_ta_fail(state.crete_dbg_ta_fail),
     crete_current_tb_pc(state.crete_current_tb_pc),
-    creteConcolicsQueue(state.creteConcolicsQueue),
     m_trace_tag_current_node_index(state.m_trace_tag_current_node_index),
     m_current_node_explored(state.m_current_node_explored),
     m_current_node_br_taken(state.m_current_node_br_taken),
@@ -431,30 +430,6 @@ void ExecutionState::dumpStack(llvm::raw_ostream &out) const {
 }
 
 #if defined(CRETE_CONFIG)
-void ExecutionState::pushCreteConcolic(ConcolicVariable cv) {
-    creteConcolicsQueue.push_back(cv);
-}
-
-ConcolicVariable ExecutionState::getFirstConcolic() {
-    assert(!creteConcolicsQueue.empty() &&
-            "creteConcolicsQueue1 is empty, which means __crete_make_symbolic is executed more than expected!\n");
-
-    ConcolicVariable front_cv= creteConcolicsQueue.front();
-    creteConcolicsQueue.pop_front();
-    return front_cv;
-}
-
-void ExecutionState::printCreteConolic(){
-    std::cerr << "creteConcolicsQueue1.size() = " << std::dec
-            << creteConcolicsQueue.size() << std::endl;
-    for(unsigned long i = 0; i < creteConcolicsQueue.size(); ++i) {
-        std::cerr<<  creteConcolicsQueue[i].m_name << ": "
-                << "0x" << std::hex << creteConcolicsQueue[i].m_guest_addr
-                << std::dec << creteConcolicsQueue[i].m_data_size
-                << std::endl;
-    }
-}
-
 bool ExecutionState::isSymbolics(const MemoryObject *mo) {
     bool ret = false;
     for (unsigned int i=0; i<symbolics.size(); i++) {
