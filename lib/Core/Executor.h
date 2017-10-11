@@ -567,7 +567,7 @@ private:
               klee::KInstruction* target,
               std::vector<klee::ref<klee::Expr> > &args);
 
-  static void handleCreteMakeSymbolic(klee::Executor* executor,
+  static void handleCreteMakeConolicInternal(klee::Executor* executor,
           klee::ExecutionState* state,
           klee::KInstruction* target,
           std::vector<klee::ref<klee::Expr> > &args);
