@@ -440,13 +440,14 @@ const Module *Executor::setModule(llvm::Module *module,
 
   specialFunctionHandler = new SpecialFunctionHandler(*this);
 
+#if defined(CRETE_CONFIG)
+  crete_init_special_function_handler();
+#endif // CRETE_CONFIG
+
   specialFunctionHandler->prepare();
   kmodule->prepare(opts, interpreterHandler);
   specialFunctionHandler->bind();
 
-#if defined(CRETE_CONFIG)
-  crete_init_special_function_handler();
-#endif // CRETE_CONFIG
 
   if (StatsTracker::useStatistics() || userSearcherRequiresMD2U()) {
     statsTracker = 
@@ -4159,91 +4160,67 @@ void Executor::crete_init_special_function_handler() {
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteInitCpuState);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("crete_qemu_tb_prologue");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteQemuTbPrologue);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("crete_finish_replay");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteFinishReply);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("helper_crete_make_concolic_internal");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteMakeConolicInternal);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("helper_crete_assume_begin");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteAssumeBegin);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("helper_crete_assume");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteAssume);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("helper_crete_debug_capture");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteDebugCapture);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("raise_interrupt2");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleQemuRaiseInterrupt2);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("crete_bc_assert");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteBcAssert);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("crete_verify_cpuState_offset");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteVerifyCpuStateOffset);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
 
     function = kmodule->module->getFunction("crete_get_dynamic_addr");
     if(function)
     {
         specialFunctionHandler->addUHandler(function, handleCreteGetDynamicAddr);
-        if (!function->isDeclaration())
-            function->deleteBody();
     }
-
-
 }
 
 Executor::StatePair

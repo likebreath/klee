@@ -801,6 +801,9 @@ void SpecialFunctionHandler::handleDivRemOverflow(ExecutionState &state,
 #if defined(CRETE_CONFIG)
 void SpecialFunctionHandler::addUHandler(llvm::Function* f, FunctionHandler h)
 {
+    if (!f->isDeclaration())
+        f->deleteBody();
+
     uhandlers[f] = std::make_pair(h,
                 f->getReturnType()->getTypeID() != llvm::Type::VoidTyID);
 }
