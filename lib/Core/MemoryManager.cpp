@@ -209,7 +209,7 @@ bool MemoryManager::find_dynamic_page_mo(uint64_t static_addr, MemoryObject *&re
     if(m_dyn_addr_map.find(static_page_addr) == m_dyn_addr_map.end())
     {
         ret = false;
-        m_dyn_addr_map[static_page_addr] = allocate(PAGE_SIZE, false, true, 0, 64);
+        m_dyn_addr_map[static_page_addr] = allocate(PAGE_SIZE, false, true, 0, PAGE_SIZE);
 
 //        fprintf(stderr, "find_dynamic_page_mo(): create new page mo: static_page_addr = %p, page_mo_addr = %p\n",
 //                (void *)static_page_addr, (void *)m_dyn_addr_map[static_page_addr]->address);
