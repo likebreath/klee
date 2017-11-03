@@ -4485,6 +4485,11 @@ bool Executor::crete_getConcolicSolution(const ExecutionState &state,
 
     assert(tcp_elems.empty());
     tcp_elems.resize(res.size());
+    for(uint64_t i = 0; i < state.symbolics.size(); ++i)
+    {
+        tcp_elems[i].name = state.symbolics[i].second->getName();
+    }
+
     for(constraint_dependency_ty::const_iterator it = complete_deps.begin();
             it != complete_deps.end(); ++it)
     {
@@ -4496,7 +4501,7 @@ bool Executor::crete_getConcolicSolution(const ExecutionState &state,
 
         uint8_t value = res[symbolics_index].second[index];
 
-        tcp_elems[symbolics_index].push_back(std::make_pair(index, value));
+        tcp_elems[symbolics_index].data.push_back(std::make_pair(index, value));
     }
 
     return success;
@@ -4796,10 +4801,14 @@ void Executor::handleCreteMakeConolicInternal(klee::Executor* executor,
        size != cv_size ||
        concreteData != cv_concrete_value ||
        name != cv_name) {
-        fprintf(stderr, "[CRETE Error] handleCreteMakeConolicInternal(): inconsistent data!\n");
+        fprintf(stderr, "[CRETE Error] handleCreteMakeConolicInternal(): inconsistent data![%d, %d, %d (%lu, %lu), %d]\n",
+                static_addr != cv_static_addr,
+                size != cv_size,
+                name != cv_name, name.size(), cv_name.size(),
+                concreteData != cv_concrete_value);
 
         fprintf(stderr, "Info from bitcode: cv_static_addr = %p, cv_size = %lu, cv_name = %s (%p), value[%lu] = (",
-                (void *)cv_static_addr, cv_size, name.c_str(), (void *)name_static_addr, cv_concrete_value.size());
+                (void *)cv_static_addr, cv_size, cv_name.c_str(), (void *)name_static_addr, cv_concrete_value.size());
         for(uint64_t i = 0; i < cv_concrete_value.size(); ++i) {
             fprintf(stderr, "%lx ",(uint64_t)cv_concrete_value[i]);
         }
