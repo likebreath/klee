@@ -4748,8 +4748,16 @@ void Executor::handleCreteMakeConolicInternal(klee::Executor* executor,
 
     for(uint64_t i = 0; i < cv_size; ++i)
     {
-        ref<ConstantExpr> expr_byte = dyn_cast<ConstantExpr>(cv_page_os->read8(cv_in_page_offset + i));
-        cv_concrete_value.push_back(expr_byte->getZExtValue(8));
+        ref<Expr> expr_byte = cv_page_os->read8(cv_in_page_offset + i);
+        if(!isa<ConstantExpr>(expr_byte))
+        {
+            fprintf(stderr, "[CRETE Warning] handleCreteMakeConolicInternal(): symbolic initial value, offset = %lu:\n",i);
+            expr_byte->dump();
+            expr_byte = state->concolics.evaluate(state->constraints.simplifyExpr(expr_byte));
+        }
+
+        assert(isa<ConstantExpr>(expr_byte));
+        cv_concrete_value.push_back(dyn_cast<ConstantExpr>(expr_byte)->getZExtValue(8));
     }
 
     vector<uint8_t> name_value;
