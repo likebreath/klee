@@ -3963,15 +3963,13 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 #if defined(CRETE_CHECK_CONCOLIC_TG)
   // concolic test case generation
   assert(values.size() == state.symbolics.size());
-  const constraint_dependency_ty&  complete_deps= state.constraints.get_constraint_dependency().get();
+  const constraint_dependency_ty&  cs_deps= state.constraints.get_constraint_dependency();
 
   vector< std::vector<unsigned char> > sym_values(values);
 
   CRETE_DBG_CTG(
   static uint64_t tc_num = 1;
   cerr << "\n=== tc-" << tc_num++ << "===\n";
-  cerr << "complete_deps: ";
-  state.constraints.get_constraint_dependency().print_deps();
   );
 
 
@@ -3989,12 +3987,12 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 
       for(uint64_t j = 0; j < sym_arr->size; ++j)
       {
-          if(complete_deps.find(std::make_pair(sym_arr, j)) == complete_deps.end())
+          if(cs_deps.find(std::make_pair(sym_arr, j)) == cs_deps.end())
           {
-              assert(sym_solution_value[j] == 0 &&
+              assert((sym_solution_value[j] == 0 || sym_solution_value[j] == initial_value[j]) &&
                       "[CRETE Error] default value for non-constrained symbolic byte should be 0\n");
 
-              sym_solution_value[j] = initial_value[j];;
+              sym_solution_value[j] = initial_value[j];
           }
       }
   }
@@ -4482,11 +4480,14 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 bool Executor::crete_getConcolicSolution(const ExecutionState &state,
                                          std::vector<crete::TestCasePatchElement_ty>& tcp_elems)
 {
+    // TODO: xxx const_cast<> is dangerous
+    const_cast<ExecutionState *>(&state)->simplifyConstraintsWithConcolicValue();
+
     std::vector< std::pair<std::string, std::vector<unsigned char> > > res;
     bool success = getSymbolicSolution(state, res);
     assert(res.size() == state.symbolics.size());
 
-    const constraint_dependency_ty&  complete_deps= state.constraints.get_constraint_dependency().get();
+    const constraint_dependency_ty& cs_deps = state.constraints.get_constraint_dependency();
 
     assert(tcp_elems.empty());
     tcp_elems.resize(res.size());
@@ -4495,8 +4496,8 @@ bool Executor::crete_getConcolicSolution(const ExecutionState &state,
         tcp_elems[i].name = state.symbolics[i].second->getName();
     }
 
-    for(constraint_dependency_ty::const_iterator it = complete_deps.begin();
-            it != complete_deps.end(); ++it)
+    for(constraint_dependency_ty::const_iterator it = cs_deps.begin();
+            it != cs_deps.end(); ++it)
     {
         uint32_t index = it->second;
 
@@ -4514,8 +4515,6 @@ bool Executor::crete_getConcolicSolution(const ExecutionState &state,
     CRETE_DBG_CTG(
     static uint64_t tc_num = 1;
     cerr << "\n=== tc-" << tc_num++ << "===\n";
-    cerr << "complete_deps: ";
-    state.constraints.get_constraint_dependency().print_deps();
     );
 }
 
