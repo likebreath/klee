@@ -175,24 +175,21 @@ void ConstraintManager::addConstraint(ref<Expr> e) {
 }
 
 #if defined(CRETE_CONFIG)
-CreteConstraintDependency::CreteConstraintDependency(ref<Expr> e)
+const constraint_dependency_ty& CreteConstraintDependency::get_last_cs_deps() const
 {
-    assert(m_scaned_sub_exprs.empty());
-    add_dep_internal(e, 1);
-}
-
-const constraint_dependency_ty& CreteConstraintDependency::get() const
-{
-    return m_deps;
+    return m_last_cs_deps;
 }
 
 void CreteConstraintDependency::add_dep(ref<Expr> e)
 {
     m_scaned_sub_exprs.clear();
-    add_dep_internal(e, 1);
+    m_last_cs_deps.clear();
+
+    add_to_last_cs_deps(e, 1);
+    m_complete_deps.insert(m_last_cs_deps.begin(), m_last_cs_deps.end());
 }
 
-void CreteConstraintDependency::add_dep_internal(ref<Expr> e, uint64_t caller_number)
+void CreteConstraintDependency::add_to_last_cs_deps(ref<Expr> e, uint64_t caller_number)
 {
     if (!isa<ConstantExpr>(e) && m_scaned_sub_exprs.insert(e).second)
     {
@@ -206,23 +203,77 @@ void CreteConstraintDependency::add_dep_internal(ref<Expr> e, uint64_t caller_nu
 
             uint64_t index= cast<ConstantExpr>(re->index)->getZExtValue();
             const Array* sym_array = re->updates.root;
-            m_deps.insert(std::make_pair(sym_array, index));
+            m_last_cs_deps.insert(std::make_pair(sym_array, index));
         } else {
             for (unsigned i=0; i<e->getNumKids(); i++)
             {
-                add_dep_internal(e->getKid(i), caller_number+1);
+                add_to_last_cs_deps(e->getKid(i), caller_number+1);
             }
         }
     }
 }
 
+// Return deps in m_complete_deps bug not in m_last_cs_deps
+constraint_dependency_ty CreteConstraintDependency::get_deps_not_from_last_cs() const
+{
+    constraint_dependency_ty ret = m_complete_deps;
+
+    for(constraint_dependency_ty::const_iterator it = m_last_cs_deps.begin();
+            it != m_last_cs_deps.end(); ++it) {
+         size_t removed = ret.erase(*it);
+         assert(removed == 1);
+    }
+
+    return ret;
+}
+
 #include <stdio.h>
 void CreteConstraintDependency::print_deps() const
 {
-    fprintf(stderr, "constraint deps size: %lu\n", m_deps.size());
-    for(constraint_dependency_ty::const_iterator it = m_deps.begin();
-            it != m_deps.end(); ++it) {
+    fprintf(stderr, "constraint deps size: %lu\n", m_complete_deps.size());
+    for(constraint_dependency_ty::const_iterator it = m_complete_deps.begin();
+            it != m_complete_deps.end(); ++it) {
         fprintf(stderr, "%s[%lu]\n", it->first->getName().c_str(), it->second);
     }
 }
+
+void ConstraintManager::print_constraints() const
+{
+    fprintf(stderr, "=============================\n");
+    for(constraint_iterator it = constraints.begin();
+            it != constraints.end(); ++it) {
+        (*it)->dump();
+    }
+    fprintf(stderr, "=============================\n");
+}
+
+void ConstraintManager::simplifyConstraintsWithConcolicValue(const Assignment& concolics)
+{
+    CRETE_DBG(print_constraints(););
+
+    constraint_dependency_ty removed_deps = m_complete_deps.get_deps_not_from_last_cs();
+
+    // For each removed elements in constraint deps, use its concrete value to simplify the constraints
+    for(constraint_dependency_ty::const_iterator it = removed_deps.begin();
+            it != removed_deps.end(); ++it) {
+        const Array *arr = it->first;
+        uint64_t index = it->second;
+
+        // Get the concrete value from concolics
+        assert(index < concolics.bindings.at(arr).size());
+        uint8_t concrete_value = concolics.bindings.at(arr)[index];
+
+        // Construct read Expr on the arr with index
+        ref<Expr> read_byte = ReadExpr::create(UpdateList(arr, 0),
+                                               ConstantExpr::alloc(index, Expr::Int32));
+
+        // (Eq ReadExpr, concrete value) as condition to add
+        ref<Expr> condition = EqExpr::create(read_byte,
+                                             ConstantExpr::alloc(concrete_value, Expr::Int8));
+        addConstraintInternal(simplifyExpr(condition));
+    }
+
+    CRETE_DBG(print_constraints(););
+}
+
 #endif

@@ -13,6 +13,8 @@
 #include "klee/Expr.h"
 
 #if defined(CRETE_CONFIG)
+#include "klee/util/Assignment.h"
+
 #include <boost/unordered_set.hpp>
 #endif
 
@@ -30,20 +32,24 @@ typedef boost::unordered_set<std::pair<const Array*, uint64_t> > constraint_depe
 
 class CreteConstraintDependency
 {
+friend class ConstraintManager;
 public:
-    CreteConstraintDependency(ref<Expr> e);
     CreteConstraintDependency() {}
 
+protected:
     void add_dep(ref<Expr> e);
+    const constraint_dependency_ty& get_last_cs_deps() const;
+    constraint_dependency_ty get_deps_not_from_last_cs() const;
 
-    const constraint_dependency_ty& get() const;
     void print_deps() const;
 
 private:
     std::set< ref<Expr> > m_scaned_sub_exprs;
-    constraint_dependency_ty m_deps;
 
-    void add_dep_internal(ref<Expr> e, uint64_t caller_number);
+    constraint_dependency_ty m_last_cs_deps;
+    constraint_dependency_ty m_complete_deps;
+
+    void add_to_last_cs_deps(ref<Expr> e, uint64_t caller_number);
 };
 #endif //defined(CRETE_CONFIG)
 
@@ -106,10 +112,13 @@ private:
 
 #if defined(CRETE_CONFIG)
 public:
-  const CreteConstraintDependency& get_constraint_dependency() const
+  const constraint_dependency_ty& get_constraint_dependency() const
   {
-      return m_complete_deps;
+      return m_complete_deps.get_last_cs_deps();
   }
+
+  void print_constraints() const;
+  void simplifyConstraintsWithConcolicValue(const Assignment& cocnolics);
 
 private:
   CreteConstraintDependency m_complete_deps;
