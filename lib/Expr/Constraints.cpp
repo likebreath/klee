@@ -182,16 +182,22 @@ const constraint_dependency_ty& CreteConstraintDependency::get_last_cs_deps() co
 
 void CreteConstraintDependency::add_dep(ref<Expr> e)
 {
-    m_scaned_sub_exprs.clear();
     m_last_cs_deps.clear();
 
-    add_to_last_cs_deps(e, 1);
+    get_expr_cs_deps(e, m_last_cs_deps);
     m_complete_deps.insert(m_last_cs_deps.begin(), m_last_cs_deps.end());
 }
 
-void CreteConstraintDependency::add_to_last_cs_deps(ref<Expr> e, uint64_t caller_number)
+void CreteConstraintDependency::get_expr_cs_deps(ref<Expr> e,
+        constraint_dependency_ty &deps,
+        uint64_t caller_num)
 {
-    if (!isa<ConstantExpr>(e) && m_scaned_sub_exprs.insert(e).second)
+    static set< ref<Expr> > scaned_sub_exprs;
+
+    if(caller_num == 0)
+        scaned_sub_exprs.clear();
+
+    if (!isa<ConstantExpr>(e) && scaned_sub_exprs.insert(e).second)
     {
         if (const ReadExpr *re = dyn_cast<ReadExpr>(e)) {
             assert(isa<ConstantExpr>(re->index));
@@ -203,11 +209,11 @@ void CreteConstraintDependency::add_to_last_cs_deps(ref<Expr> e, uint64_t caller
 
             uint64_t index= cast<ConstantExpr>(re->index)->getZExtValue();
             const Array* sym_array = re->updates.root;
-            m_last_cs_deps.insert(std::make_pair(sym_array, index));
+            deps.insert(std::make_pair(sym_array, index));
         } else {
             for (unsigned i=0; i<e->getNumKids(); i++)
             {
-                add_to_last_cs_deps(e->getKid(i), caller_number+1);
+                get_expr_cs_deps(e->getKid(i), deps, ++caller_num);
             }
         }
     }

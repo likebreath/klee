@@ -36,6 +36,10 @@ friend class ConstraintManager;
 public:
     CreteConstraintDependency() {}
 
+    static void get_expr_cs_deps(ref<Expr> expr,
+            constraint_dependency_ty &deps,
+            uint64_t caller_num = 0);
+
 protected:
     void add_dep(ref<Expr> e);
     const constraint_dependency_ty& get_last_cs_deps() const;
@@ -44,12 +48,8 @@ protected:
     void print_deps() const;
 
 private:
-    std::set< ref<Expr> > m_scaned_sub_exprs;
-
     constraint_dependency_ty m_last_cs_deps;
     constraint_dependency_ty m_complete_deps;
-
-    void add_to_last_cs_deps(ref<Expr> e, uint64_t caller_number);
 };
 #endif //defined(CRETE_CONFIG)
 
