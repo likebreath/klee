@@ -3545,6 +3545,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
 #if defined(CRETE_CONFIG)
   // Concretize the address if it is symbolic address, based on concrete values
   if (!isa<ConstantExpr>(address)){
+      crete_check_sym_addr(state, address);
+
       ref<Expr> sym_address = state.constraints.simplifyExpr(address);
       address = state.concolics.evaluate(sym_address);
 
@@ -5166,5 +5168,50 @@ std::string Executor::crete_readStringAtAddress(Executor &executor,
     std::string result(buf);
     delete[] buf;
     return result;
+}
+
+// crete-checkers
+// checks on symbolic address:
+// 1. Whether the concolic variable is constrained to be non-zero, if not fire a report with a test case
+void Executor::crete_check_sym_addr(const ExecutionState &state, ref<Expr> address)
+{
+    if(isa<ConstantExpr>(address))
+        return;
+
+    ref<Expr> sym_address = state.constraints.simplifyExpr(address);
+    constraint_dependency_ty deps;
+    CreteConstraintDependency::get_expr_cs_deps(address, deps);
+
+    boost::unordered_set<const Array*> checked_arr;
+    for(constraint_dependency_ty::const_iterator it = deps.begin();
+            it != deps.end(); ++it) {
+        if(!checked_arr.insert(it->first).second)
+            continue;
+
+        const Array *array = it->first;
+        const uint64_t size = it->first->size;
+        UpdateList ul(array, 0);
+        ref<Expr> eq_zeros = ConstantExpr::alloc(1,Expr::Bool);
+        for(unsigned i = 0; i < size; ++i) {
+            ref<Expr> read_byte  = ReadExpr::create(ul,
+                    ConstantExpr::alloc(i,Expr::Int32));
+            eq_zeros = AndExpr::create(eq_zeros,
+                    Expr::createIsZero(read_byte));
+        }
+
+        bool res;
+        bool success = solver->mustBeFalse(state, eq_zeros, res);
+        assert(success);
+        if(success && !res)
+        {
+            fprintf(stderr, "[CRETE Report] Potential bugs: zero-values are allowed for \'%s\' in a symbolic address.\n",
+                    array->name.c_str());
+
+            ExecutionState st(state);
+            st.addConstraint(eq_zeros);
+
+            interpreterHandler->processTestCase(st, "potential bug", "crete");
+        }
+    }
 }
 #endif // CRETE_CONFIG

@@ -604,6 +604,8 @@ private:
           klee::KInstruction* target,
           std::vector<klee::ref<klee::Expr> > &args);
 
+  //crete cheker:
+  void crete_check_sym_addr(const ExecutionState &state, ref<Expr> address);
 
 // Debugging
   static void handleCreteBcAssert(klee::Executor* executor,
