@@ -4226,65 +4226,21 @@ void Executor::crete_init_special_function_handler() {
 Executor::StatePair
 Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
 {
-    assert(!RandomizeFork &&
-            "RandomizeFork is enabled, which means the statePair returned by fork could be swapped.\n");
-
-    // Check against trace tag
-    // Only check trace tag when klee is executing the captured code
-    //  (code from helper functions and klee's own code for checking should
-    //  not check with trace tag)
-    bool check_trace_tag = (current.stack.size() == 2) ? true:false;
-
-    bool branch_taken;
-    bool explored_node;
-    if(check_trace_tag) {
-        current.check_trace_tag(branch_taken, explored_node);
-    }
-
-    Executor::StatePair branches;
-    // Fork now is only disabled when handling crete_assume()
-    bool forked = false;
-    if(current.crete_fork_enabled && !crete_manual_disable_fork(current))
-    {
-        // Only fork if the branch:
-        // 1. is from captured instruction sequence (such as TB from qemu, branches in dependency libraries won't fork)
-        // 2. is not explored( from the not-explored node)
-        if(check_trace_tag && !explored_node)
-        {
-            branches = fork(current, condition, false);
-            forked = true;
-        }
-    }
-
-    ExecutionState *trueState  = branches.first;
-    ExecutionState *falseState = branches.second;
+    StatePair branches;
 
     ref<Expr> evalResult = current.concolics.evaluate(condition);
     assert(isa<ConstantExpr>(evalResult));
     ref<ConstantExpr> condition_value = dyn_cast<ConstantExpr>(evalResult);
 
-    if(check_trace_tag)
-    {
-        assert(branch_taken == condition_value->isTrue());
-    } else {
-        // FIXME: xxx
-        // klee may fork from outside captured bitcode, such as fork from
-        // qemu's helper functions, and KLEE's check (over_shift check, etc).
-        // Test cases generated from those forks should be treated specially,
-        // as they are not for exploring a new path back to the binary under
-        // test and should not be a part of the trace tag process.
-        if(trueState && falseState){
-            current.print_stack();
+    bool is_interested_br = (current.stack.size() == 2) ? true:false;
 
-            assert(!(trueState && falseState) &&
-                    "[CRETE FIXME] klee forks not from captured bitcode.\n");
-        }
-    }
-
-    // For branches not invoking fork, just take the "right" path based on concrete value (not add constraint)
-    if(!forked)
+    // 1. If the branch is not from captured instruction sequence (such as branches in dependency libraries,
+    //    e.g. qemu's helper functions, or klee's own code:
+    //    just proceed with path that was taken by concrete value (NOT add constraint)
+        if(!is_interested_br)
     {
-        if (condition_value->isTrue()) {
+        if (condition_value->isTrue())
+        {
             branches.first = &current;
             branches.second = NULL;
         } else {
@@ -4292,21 +4248,57 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
             branches.second = &current;
         }
 
+        // FIXME: xxx
+        // klee may fork from outside captured bitcode, such as fork from
+        // qemu's helper functions, and KLEE's check (over_shift check, etc).
+        // Test cases generation from those forks should be treated specially,
+        // as they are not for exploring a new path back to the binary under
+        // test and should not be a part of the trace tag process.
+
         return branches;
     }
 
-    // if(forked) ...
-    if(trueState && falseState){
-        if (condition_value->isTrue()) {
-            terminateStateOnExit(*falseState);
-            branches.second = NULL;
-        } else {
-            terminateStateOnExit(*trueState);
-            branches.first= NULL;
+    // 2. If the branch is from captured instruction sequence (such as TB from qemu):
+    //    check with trace tag and try to fork states and generate test case
+    bool branch_taken;
+    bool explored_node;
+    current.check_trace_tag(branch_taken, explored_node);
+    assert(branch_taken == condition_value->isTrue());
+
+    ExecutionState *trueState  = 0;
+    ExecutionState *falseState = 0;
+
+    //   Fork state and generate test case from negated branch state if:
+    //     a. the branch is not explored by checking with trace tag and
+    //     b. if crete_fork_enabled is enabled (for now only disabled for crete_assume)
+    if(!explored_node &&
+            current.crete_fork_enabled &&
+            !crete_manual_disable_fork(current))
+    {
+        branches = fork(current, condition, false);
+
+        trueState  = branches.first;
+        falseState = branches.second;
+
+        if(trueState && falseState){
+            if (condition_value->isTrue()) {
+                terminateStateOnExit(*falseState);
+                branches.second = NULL;
+            } else {
+                terminateStateOnExit(*trueState);
+                branches.first= NULL;
+            }
         }
-    } else if (!trueState && !falseState) {
-        // when STP timeout or fork is disabled, we just proceed with the path that
-        // should be taken with concrete values
+    }
+
+    // If both false/true state are NULL:
+    // proceed with the path that was taken by concrete value and add constraint
+    // This happens when:
+    //    a. node is explored
+    //    b. crete_fork_enabled is disabled
+    //    a. STP timed-out in fork()
+    if(!trueState && !falseState)
+    {
         if (condition_value->isTrue()) {
             addConstraint(current, condition);
 
