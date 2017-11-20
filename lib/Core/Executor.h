@@ -543,6 +543,8 @@ private:
 
   virtual bool crete_getConcolicSolution(const ExecutionState &state,
                                          std::vector<crete::TestCasePatchElement_ty>& tcp_elems);
+  bool crete_check_and_add_concolic_preference(ExecutionState &state,
+                                               const Array *arr, uint64_t index);
 
   std::vector<ref<Expr> > crete_create_concolic_array(
           ExecutionState* state,

@@ -687,9 +687,4 @@ bool ExecutionState::get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty&
 
     return g_qemu_rt_Info->is_tt_node_explored(tt_index);
 }
-
-void ExecutionState::simplifyConstraintsWithConcolicValue()
-{
-    constraints.simplifyConstraintsWithConcolicValue(concolics);
-}
 #endif // CRETE_CONFIG

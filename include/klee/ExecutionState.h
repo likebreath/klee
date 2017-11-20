@@ -217,8 +217,6 @@ public:
   uint64_t get_symbolics_index(const Array* sym_array) const;
   bool get_trace_tag_patch_for_tc(crete::TestCasePatchTraceTag_ty& tcp_tt) const;
 
-  void simplifyConstraintsWithConcolicValue();
-
 private:
   std::deque<ConcolicVariable > creteConcolicsQueue;
 

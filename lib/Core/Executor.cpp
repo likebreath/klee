@@ -3963,7 +3963,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 #if defined(CRETE_CHECK_CONCOLIC_TG)
   // concolic test case generation
   assert(values.size() == state.symbolics.size());
-  const constraint_dependency_ty&  cs_deps= state.constraints.get_constraint_dependency();
+  const constraint_dependency_ty&  cs_deps= state.constraints.get_complete_cs_deps();
 
   vector< std::vector<unsigned char> > sym_values(values);
 
@@ -3989,7 +3989,7 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
       {
           if(cs_deps.find(std::make_pair(sym_arr, j)) == cs_deps.end())
           {
-              assert((sym_solution_value[j] == 0 || sym_solution_value[j] == initial_value[j]) &&
+              assert((sym_solution_value[j] == 0) &&
                       "[CRETE Error] default value for non-constrained symbolic byte should be 0\n");
 
               sym_solution_value[j] = initial_value[j];
@@ -4475,14 +4475,52 @@ bool Executor::getSymbolicSolution(const ExecutionState &state,
 bool Executor::crete_getConcolicSolution(const ExecutionState &state,
                                          std::vector<crete::TestCasePatchElement_ty>& tcp_elems)
 {
-    // TODO: xxx const_cast<> is dangerous
-    const_cast<ExecutionState *>(&state)->simplifyConstraintsWithConcolicValue();
+    const constraint_dependency_ty &complete_cs_deps = state.constraints.get_complete_cs_deps();
+    const constraint_dependency_ty &last_cs_deps = state.constraints.get_last_cs_deps();
+
+    solver->setTimeout(coreSolverTimeout);
+    ExecutionState tmp(state);
+
+    // check concolic values with exsiting constraints, if not contradict, prefer concolic values
+    constraint_dependency_ty unqualified_deps;
+
+    // First, check cs_deps not from last_cs_deps
+    for(constraint_dependency_ty::const_iterator it = complete_cs_deps.begin();
+            it != complete_cs_deps.end(); ++it) {
+        if(last_cs_deps.find(*it) != last_cs_deps.end())
+            continue;
+
+        bool qualified = crete_check_and_add_concolic_preference(tmp, it->first, it->second);
+
+        if(!qualified)
+        {
+            unqualified_deps.insert(*it);
+
+            CRETE_DBG(
+            fprintf(stderr, "1. not-qualified: %s[%lu]\n",
+                    it->first->name.c_str(), it->second);
+            );
+        }
+    }
+    // Then check last_cs_deps
+    for(constraint_dependency_ty::const_iterator it = last_cs_deps.begin();
+                it != last_cs_deps.end(); ++it) {
+        bool qualified = crete_check_and_add_concolic_preference(tmp, it->first, it->second);
+
+        if(!qualified)
+        {
+            unqualified_deps.insert(*it);
+
+            CRETE_DBG(
+            fprintf(stderr, "2. not-qualified: %s[%lu]\n",
+                    it->first->name.c_str(), it->second);
+            );
+        }
+    }
 
     std::vector< std::pair<std::string, std::vector<unsigned char> > > res;
-    bool success = getSymbolicSolution(state, res);
+    bool success = getSymbolicSolution(tmp, res);
     assert(res.size() == state.symbolics.size());
-
-    const constraint_dependency_ty& cs_deps = state.constraints.get_constraint_dependency();
 
     assert(tcp_elems.empty());
     tcp_elems.resize(res.size());
@@ -4491,8 +4529,8 @@ bool Executor::crete_getConcolicSolution(const ExecutionState &state,
         tcp_elems[i].name = state.symbolics[i].second->getName();
     }
 
-    for(constraint_dependency_ty::const_iterator it = cs_deps.begin();
-            it != cs_deps.end(); ++it)
+    for(constraint_dependency_ty::const_iterator it = unqualified_deps.begin();
+            it != unqualified_deps.end(); ++it)
     {
         uint32_t index = it->second;
 
@@ -4511,6 +4549,36 @@ bool Executor::crete_getConcolicSolution(const ExecutionState &state,
     static uint64_t tc_num = 1;
     cerr << "\n=== tc-" << tc_num++ << "===\n";
     );
+}
+
+// Ret: true, if cocnolic preference is qualified and added to constraints; false, otherwise
+bool Executor::crete_check_and_add_concolic_preference(ExecutionState &state, const Array *arr, uint64_t index)
+{
+    // Get the concrete value from concolics
+    assert(index < state.concolics.bindings.at(arr).size());
+    uint8_t concrete_value = state.concolics.bindings.at(arr)[index];
+
+    // Construct read Expr on the arr with index
+    ref<Expr> read_byte = ReadExpr::create(UpdateList(arr, 0),
+                                           ConstantExpr::alloc(index, Expr::Int32));
+
+    // (Eq ReadExpr, concrete_value) as condition to check
+    ref<Expr> condition = EqExpr::create(read_byte,
+                                         ConstantExpr::alloc(concrete_value, Expr::Int8));
+
+    bool mustBeFalse;
+    bool success = solver->mustBeFalse(state, condition, mustBeFalse);
+
+    // If constraint does not imply 'condition' is always false ( condition is not mustBeFlase),
+    // 'condition' is qualified and added to constraints
+    if(success && !mustBeFalse)
+    {
+        state.addConstraint(condition);
+
+        return true;
+    } else {
+        return false;
+    }
 }
 
 void Executor::crete_assert_concolic_tc(const ExecutionState &state,

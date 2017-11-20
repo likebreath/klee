@@ -170,22 +170,17 @@ void ConstraintManager::addConstraint(ref<Expr> e) {
   addConstraintInternal(e);
 
 #if defined(CRETE_CONFIG)
-  m_complete_deps.add_dep(e);
+  m_crete_cs_deps.add_dep(e);
 #endif
 }
 
 #if defined(CRETE_CONFIG)
-const constraint_dependency_ty& CreteConstraintDependency::get_last_cs_deps() const
-{
-    return m_last_cs_deps;
-}
-
 void CreteConstraintDependency::add_dep(ref<Expr> e)
 {
     m_last_cs_deps.clear();
 
     get_expr_cs_deps(e, m_last_cs_deps);
-    m_complete_deps.insert(m_last_cs_deps.begin(), m_last_cs_deps.end());
+    m_complete_cs_deps.insert(m_last_cs_deps.begin(), m_last_cs_deps.end());
 }
 
 void CreteConstraintDependency::get_expr_cs_deps(ref<Expr> e,
@@ -219,26 +214,12 @@ void CreteConstraintDependency::get_expr_cs_deps(ref<Expr> e,
     }
 }
 
-// Return deps in m_complete_deps bug not in m_last_cs_deps
-constraint_dependency_ty CreteConstraintDependency::get_deps_not_from_last_cs() const
-{
-    constraint_dependency_ty ret = m_complete_deps;
-
-    for(constraint_dependency_ty::const_iterator it = m_last_cs_deps.begin();
-            it != m_last_cs_deps.end(); ++it) {
-         size_t removed = ret.erase(*it);
-         assert(removed == 1);
-    }
-
-    return ret;
-}
-
 #include <stdio.h>
 void CreteConstraintDependency::print_deps() const
 {
-    fprintf(stderr, "constraint deps size: %lu\n", m_complete_deps.size());
-    for(constraint_dependency_ty::const_iterator it = m_complete_deps.begin();
-            it != m_complete_deps.end(); ++it) {
+    fprintf(stderr, "complete constraint deps size: %lu\n", m_complete_cs_deps.size());
+    for(constraint_dependency_ty::const_iterator it = m_complete_cs_deps.begin();
+            it != m_complete_cs_deps.end(); ++it) {
         fprintf(stderr, "%s[%lu]\n", it->first->getName().c_str(), it->second);
     }
 }
@@ -246,40 +227,13 @@ void CreteConstraintDependency::print_deps() const
 void ConstraintManager::print_constraints() const
 {
     fprintf(stderr, "=============================\n");
+    unsigned int i = 0;
+    fprintf(stderr, "print_constraints():\n");
     for(constraint_iterator it = constraints.begin();
             it != constraints.end(); ++it) {
+        fprintf(stderr, "[%u] ", i++);
         (*it)->dump();
     }
     fprintf(stderr, "=============================\n");
 }
-
-void ConstraintManager::simplifyConstraintsWithConcolicValue(const Assignment& concolics)
-{
-    CRETE_DBG(print_constraints(););
-
-    constraint_dependency_ty removed_deps = m_complete_deps.get_deps_not_from_last_cs();
-
-    // For each removed elements in constraint deps, use its concrete value to simplify the constraints
-    for(constraint_dependency_ty::const_iterator it = removed_deps.begin();
-            it != removed_deps.end(); ++it) {
-        const Array *arr = it->first;
-        uint64_t index = it->second;
-
-        // Get the concrete value from concolics
-        assert(index < concolics.bindings.at(arr).size());
-        uint8_t concrete_value = concolics.bindings.at(arr)[index];
-
-        // Construct read Expr on the arr with index
-        ref<Expr> read_byte = ReadExpr::create(UpdateList(arr, 0),
-                                               ConstantExpr::alloc(index, Expr::Int32));
-
-        // (Eq ReadExpr, concrete value) as condition to add
-        ref<Expr> condition = EqExpr::create(read_byte,
-                                             ConstantExpr::alloc(concrete_value, Expr::Int8));
-        addConstraintInternal(simplifyExpr(condition));
-    }
-
-    CRETE_DBG(print_constraints(););
-}
-
 #endif

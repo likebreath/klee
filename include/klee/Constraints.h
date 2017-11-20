@@ -28,7 +28,8 @@ class ExprVisitor;
   
 #if defined(CRETE_CONFIG)
 // <symbolic-array, index-within-array>
-typedef boost::unordered_set<std::pair<const Array*, uint64_t> > constraint_dependency_ty;
+typedef std::pair<const Array*, uint64_t> constraint_dependency_elem_ty;
+typedef boost::unordered_set<constraint_dependency_elem_ty> constraint_dependency_ty;
 
 class CreteConstraintDependency
 {
@@ -42,14 +43,20 @@ public:
 
 protected:
     void add_dep(ref<Expr> e);
-    const constraint_dependency_ty& get_last_cs_deps() const;
-    constraint_dependency_ty get_deps_not_from_last_cs() const;
+    const constraint_dependency_ty& get_last_cs_deps() const
+    {
+        return m_last_cs_deps;
+    }
+    const constraint_dependency_ty& get_complete_cs_deps() const
+    {
+        return m_complete_cs_deps;
+    }
 
     void print_deps() const;
 
 private:
     constraint_dependency_ty m_last_cs_deps;
-    constraint_dependency_ty m_complete_deps;
+    constraint_dependency_ty m_complete_cs_deps;
 };
 #endif //defined(CRETE_CONFIG)
 
@@ -68,7 +75,7 @@ public:
 
   ConstraintManager(const ConstraintManager &cs) : constraints(cs.constraints)
 #if defined(CRETE_CONFIG)
-  ,m_complete_deps(cs.m_complete_deps)
+  ,m_crete_cs_deps(cs.m_crete_cs_deps)
 #endif
   {}
 
@@ -112,16 +119,20 @@ private:
 
 #if defined(CRETE_CONFIG)
 public:
-  const constraint_dependency_ty& get_constraint_dependency() const
+  const constraint_dependency_ty& get_last_cs_deps() const
   {
-      return m_complete_deps.get_last_cs_deps();
+      return m_crete_cs_deps.get_last_cs_deps();
+  }
+
+  const constraint_dependency_ty& get_complete_cs_deps() const
+  {
+      return m_crete_cs_deps.get_complete_cs_deps();
   }
 
   void print_constraints() const;
-  void simplifyConstraintsWithConcolicValue(const Assignment& cocnolics);
 
 private:
-  CreteConstraintDependency m_complete_deps;
+  CreteConstraintDependency m_crete_cs_deps;
 #endif
 };
 
