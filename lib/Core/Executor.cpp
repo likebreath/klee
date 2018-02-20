@@ -1851,8 +1851,11 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
         conditions.push_back(branchTargets[*it]);
       }
       std::vector<ExecutionState*> branches;
+#if !defined(CRETE_CONFIG)
       branch(state, conditions, branches);
-//      crete_concolic_branch(state, conditions, branches);
+#else
+      crete_concolic_branch(state, conditions, branches);
+#endif
 
       std::vector<ExecutionState*>::iterator bit = branches.begin();
       for (std::vector<BasicBlock *>::iterator it = bbOrder.begin(),
@@ -3671,7 +3674,8 @@ void Executor::executeMemoryOperation(ExecutionState &state,
       terminateStateEarly(*unbound, "Query timed out (resolve).");
     } else {
 #if defined(CRETE_CONFIG)
-      assert(0 && "[CRETE ERROR] This should never happen: all memory errors should be"
+        state.print_stack();
+        assert(0 && "[CRETE ERROR] This should never happen: all memory errors should be"
                 "caught at crete_preprocess_memory_operation()\n");
 #endif
 
@@ -4221,6 +4225,18 @@ void Executor::crete_init_special_function_handler() {
     {
         specialFunctionHandler->addUHandler(function, handleCreteGetDynamicAddr);
     }
+
+    function = kmodule->module->getFunction("crete_disable_fork");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteDisableFork);
+    }
+
+    function = kmodule->module->getFunction("crete_enable_fork");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteEnableFork);
+    }
 }
 
 Executor::StatePair
@@ -4232,12 +4248,10 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
     assert(isa<ConstantExpr>(evalResult));
     ref<ConstantExpr> condition_value = dyn_cast<ConstantExpr>(evalResult);
 
-    bool is_interested_br = (current.stack.size() == 2) ? true:false;
-
-    // 1. If the branch is not from captured instruction sequence (such as branches in dependency libraries,
-    //    e.g. qemu's helper functions, or klee's own code:
-    //    just proceed with path that was taken by concrete value (NOT add constraint)
-        if(!is_interested_br)
+    // 1. Proceed with path that was taken by concrete value (NOT add constraint), if:
+    //     a. crete_fork_enabled is not enabled (for now only disabled for crete_assume), OR
+    //     b. manually excluded in "fork_blacklist"
+    if(!current.crete_fork_enabled || crete_manual_disable_fork(current))
     {
         if (condition_value->isTrue())
         {
@@ -4248,33 +4262,37 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
             branches.second = &current;
         }
 
+        return branches;
+    }
+
+    // 2. Try to fork state and generate test case.
+    //    Need to check with trace-tag if branch is from captured trace
+    bool is_captured_br = (current.stack.size() == 2) ? true:false;
+    bool branch_taken;
+    bool explored_node;
+
+    // 2.1 Check with trace tag, if the branch is from captured instruction sequence (such as TB from qemu):
+    if(is_captured_br)
+    {
+        current.check_trace_tag(branch_taken, explored_node);
+        assert(branch_taken == condition_value->isTrue());
+    }
+
+    ExecutionState *trueState  = 0;
+    ExecutionState *falseState = 0;
+
+    //   Fork state and generate test case from negated branch state if:
+    //     a. the branch is not from captured instruction sequence (rather than from helper functions), OR
+    //     b. the branch is not explored by checking with trace tag
+    if(!(is_captured_br && explored_node))
+    {
+
         // FIXME: xxx
         // klee may fork from outside captured bitcode, such as fork from
         // qemu's helper functions, and KLEE's check (over_shift check, etc).
         // Test cases generation from those forks should be treated specially,
         // as they are not for exploring a new path back to the binary under
         // test and should not be a part of the trace tag process.
-
-        return branches;
-    }
-
-    // 2. If the branch is from captured instruction sequence (such as TB from qemu):
-    //    check with trace tag and try to fork states and generate test case
-    bool branch_taken;
-    bool explored_node;
-    current.check_trace_tag(branch_taken, explored_node);
-    assert(branch_taken == condition_value->isTrue());
-
-    ExecutionState *trueState  = 0;
-    ExecutionState *falseState = 0;
-
-    //   Fork state and generate test case from negated branch state if:
-    //     a. the branch is not explored by checking with trace tag and
-    //     b. if crete_fork_enabled is enabled (for now only disabled for crete_assume)
-    if(!explored_node &&
-            current.crete_fork_enabled &&
-            !crete_manual_disable_fork(current))
-    {
         branches = fork(current, condition, false);
 
         trueState  = branches.first;
@@ -4282,10 +4300,10 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
 
         if(trueState && falseState){
             if (condition_value->isTrue()) {
-                terminateStateOnExit(*falseState);
+                crete_terminateStateOnExit(*falseState, is_captured_br);
                 branches.second = NULL;
             } else {
-                terminateStateOnExit(*trueState);
+                crete_terminateStateOnExit(*trueState, is_captured_br);
                 branches.first= NULL;
             }
         }
@@ -4295,8 +4313,7 @@ Executor::crete_concolic_fork(ExecutionState &current, ref<Expr> condition)
     // proceed with the path that was taken by concrete value and add constraint
     // This happens when:
     //    a. node is explored
-    //    b. crete_fork_enabled is disabled
-    //    a. STP timed-out in fork()
+    //    b. STP timed-out in fork()
     if(!trueState && !falseState)
     {
         if (condition_value->isTrue()) {
@@ -4325,24 +4342,31 @@ void Executor::crete_concolic_branch(ExecutionState &state,
         std::vector<ExecutionState*> &result)
 {
     unsigned N = conditions.size();
-    unsigned count_matched_case = 0;
-    for (unsigned i=0; i < N; ++i){
-        if (result[i]){
-            ref<Expr> evalResult = result[i]->concolics.evaluate(conditions[i]);
-            assert(isa<ConstantExpr>(evalResult));
-            ref<ConstantExpr> condition_value = dyn_cast<ConstantExpr>(evalResult);
+    result.resize(N, NULL);
 
-            if(condition_value->isFalse()){
-                terminateStateEarly(*result[i],
-                        "Terminate the a state forked in switch statement to generate a test case.\n");
-                result[i] = NULL;
-            } else {
-                ++count_matched_case;
-            }
+    bool gen_tc = state.crete_fork_enabled && !crete_manual_disable_fork(state);
+    int matched_case_index = -1;
+
+    for (unsigned i=0; i < N; ++i){
+        ref<Expr> evalResult = state.concolics.evaluate(conditions[i]);
+        assert(isa<ConstantExpr>(evalResult));
+
+        if(dyn_cast<ConstantExpr>(evalResult)->isTrue()) {
+            assert(matched_case_index == -1 && "[CRETE ERROR] More than one satisfied cases found in a switch statement!");
+            matched_case_index = i;
+        } else if(gen_tc) {
+            // Generate test case
+            // TODO:: xxx assume captured instructions won't contain switch statement
+            ExecutionState *newState = new ExecutionState(state);
+            addConstraint(*newState, conditions[i]);
+            interpreterHandler->processTestCase(*newState, 0, 0, false);
+            delete newState;
         }
     }
 
-    assert(count_matched_case == 1 && "There should only be only match case.");
+    assert(matched_case_index != -1 && "[CRETE ERROR] No satisfied cases found in a switch statement!");
+    addConstraint(state, conditions[matched_case_index]);
+    result[matched_case_index] = &state;
 }
 
 bool Executor::crete_manual_disable_fork(const ExecutionState &state)
@@ -4661,6 +4685,13 @@ std::vector<ref<Expr> > Executor::crete_create_concolic_array(
     return result;
 }
 
+void Executor::crete_terminateStateOnExit(ExecutionState &state, bool is_captured_br) {
+  if (!OnlyOutputStatesCoveringNew || state.coveredNew ||
+      (AlwaysOutputSeeds && seedMap.count(&state)))
+    interpreterHandler->processTestCase(state, 0, 0, is_captured_br);
+  terminateState(state);
+}
+
 // Initialize cpuState based the initial cpuState dumped
 void Executor::handleCreteInitCpuState(klee::Executor* executor,
         klee::ExecutionState* state,
@@ -4973,6 +5004,26 @@ void Executor::handleCreteGetDynamicAddr(klee::Executor* executor,
     executor->bindLocal(target, *state, ConstantExpr::create(dynamic_addr, 64));
 }
 
+void Executor::handleCreteDisableFork(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args)
+{
+    assert(args.size() == 0);
+    assert(state->crete_fork_enabled && "[CRETE ERROR] \'crete_fork_enabled\' should be true when crete_disable_fork() is used\n");
+    state->crete_fork_enabled = false;
+}
+
+void Executor::handleCreteEnableFork(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args)
+{
+    assert(args.size() == 0);
+    assert(!state->crete_fork_enabled && "[CRETE ERROR] \'crete_fork_enabled\' should be false when crete_enable_fork() is used\n");
+    state->crete_fork_enabled = true;
+}
+
 /* Handler to replay generic interrupt:
  *     1. Verify the interrupt info between klee and qemu are matched
  *     2. Abort the execution of current TB and continue to execute the next instruction in main
@@ -5103,6 +5154,18 @@ void Executor::handleCreteBcAssert(klee::Executor* executor,
 
     uint64_t valid_value = dyn_cast<ConstantExpr>(valid)->getZExtValue();
     uint64_t msg_addr_value = dyn_cast<ConstantExpr>(msg_addr)->getZExtValue();
+
+    ObjectPair res;
+    bool found = state->addressSpace.resolveOne(dyn_cast<ConstantExpr>(msg_addr), res);
+    if(found)
+    {
+        fprintf(stderr, "message:\"");
+        for(uint64_t i = 0; i < res.second->size; ++i)
+        {
+            fprintf(stderr, "%c", (char)dyn_cast<ConstantExpr>(res.second->read8(i))->getZExtValue());
+        }
+        fprintf(stderr, "\"\n");
+    }
 
     if(valid_value == 0) {
         state->print_stack();

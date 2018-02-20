@@ -255,10 +255,16 @@ public:
 
   void setInterpreter(Interpreter *i);
 
+#if !defined(CRETE_CONFIG)
   void processTestCase(const ExecutionState  &state,
                        const char *errorMessage,
                        const char *errorSuffix);
-
+#else
+  void processTestCase(const ExecutionState  &state,
+                       const char *errorMessage,
+                       const char *errorSuffix,
+                       bool is_captured_br = false);
+#endif
   std::string getOutputFilename(const std::string &filename);
   llvm::raw_fd_ostream *openOutputFile(const std::string &filename);
   std::string getTestFilename(const std::string &suffix, unsigned id);
@@ -441,11 +447,12 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
 
 int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty& tcp_tt,
         const std::vector<crete::TestCasePatchElement_ty>& tcp_elems,
-        const crete::TestCaseIssueIndex& base_tc_issue_index)
+        const crete::TestCaseIssueIndex& base_tc_issue_index,
+        const bool from_captured_br)
 {
     static uint64_t g_test_case_count = 0;
 
-    crete::TestCase ctc(tcp_tt, tcp_elems, base_tc_issue_index);
+    crete::TestCase ctc(tcp_tt, tcp_elems, base_tc_issue_index, from_captured_br);
 
     struct stat sb;
     if(!(stat(CRETE_SVM_TEST_FOLDER, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?
@@ -468,9 +475,17 @@ int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty& tcp_tt,
 
 
 /* Outputs all files (.ktest, .kquery, .cov etc.) describing a test case */
+#if !defined(CRETE_CONFIG)
 void KleeHandler::processTestCase(const ExecutionState &state,
                                   const char *errorMessage,
-                                  const char *errorSuffix) {
+                                  const char *errorSuffix)
+#else
+void KleeHandler::processTestCase(const ExecutionState &state,
+                                  const char *errorMessage,
+                                  const char *errorSuffix,
+                                  bool is_captured_br)
+#endif
+{
   if (errorMessage && OptExitOnError) {
     m_interpreter->prepareForEarlyExit();
     klee_error("EXITING ON ERROR:\n%s\n", errorMessage);
@@ -480,7 +495,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 #if defined(CRETE_CONFIG)
     crete::TestCasePatchTraceTag_ty tcp_tt;
     bool explored_node = state.get_trace_tag_patch_for_tc(tcp_tt);
-    if(explored_node)
+    if(is_captured_br && explored_node)
     {
         fprintf(stderr, "[CRETE Warning] Skip test case generation as the "
                 "current tt node was explored: (%lu, %lu). "
@@ -488,6 +503,13 @@ void KleeHandler::processTestCase(const ExecutionState &state,
                 tcp_tt.first, tcp_tt.second);
         return;
     }
+
+    CRETE_DBG(
+    if(!is_captured_br)
+    {
+        fprintf(stderr, "processTestCase(): not is_captured_br\n");
+    }
+    );
 
     std::vector<crete::TestCasePatchElement_ty> tcp_elems;
     bool concolic_success = m_interpreter->crete_getConcolicSolution(state, tcp_elems);
@@ -497,7 +519,7 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
     if(concolic_success)
     {
-        if (!crete_concolicTest_tofile(tcp_tt, tcp_elems, g_qemu_rt_Info->get_base_tc_issue_index()))
+        if (!crete_concolicTest_tofile(tcp_tt, tcp_elems, g_qemu_rt_Info->get_base_tc_issue_index(), is_captured_br))
         {
             klee_warning("unable to write output test case, losing it");
         }
