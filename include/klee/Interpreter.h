@@ -49,9 +49,16 @@ public:
 
   virtual void incPathsExplored() = 0;
 
+#if !defined(CRETE_CONFIG)
   virtual void processTestCase(const ExecutionState &state,
                                const char *err, 
                                const char *suffix) = 0;
+#else
+  virtual void processTestCase(const ExecutionState &state,
+                               const char *err,
+                               const char *suffix,
+                               bool is_captured_br = false) = 0;
+#endif
 };
 
 class Interpreter {

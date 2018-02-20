@@ -552,6 +552,8 @@ private:
           uint64_t size,
           const vector<uint8_t> &concreteBuffer);
 
+  void crete_terminateStateOnExit(ExecutionState &state, bool is_captured_br);
+
   //TODO:xxx do we need to make the helper function handlers as static in crete?
   // handlers for crete intrinsics
   static void handleCreteInitCpuState(klee::Executor* executor,
@@ -589,6 +591,14 @@ private:
           klee::KInstruction* target,
           std::vector<klee::ref<klee::Expr> > &args);
   static void handleCreteGetDynamicAddr(klee::Executor* executor,
+            klee::ExecutionState* state,
+            klee::KInstruction* target,
+            std::vector<klee::ref<klee::Expr> > &args);
+  static void handleCreteDisableFork(klee::Executor* executor,
+            klee::ExecutionState* state,
+            klee::KInstruction* target,
+            std::vector<klee::ref<klee::Expr> > &args);
+  static void handleCreteEnableFork(klee::Executor* executor,
             klee::ExecutionState* state,
             klee::KInstruction* target,
             std::vector<klee::ref<klee::Expr> > &args);

@@ -562,6 +562,7 @@ void QemuRuntimeInfo::get_trace_tag_for_tc(uint64_t tt_tag_index,
     } else
     {
         tt_tag_for_tc.insert(tt_tag_for_tc.end(), m_trace_tag_explored.begin(), m_trace_tag_explored.end());
+        // FIXME: xxx forget to insert 'm_trace_tag_semi_explored' to the last node of 'm_trace_tag_explored'
         tt_tag_for_tc.insert(tt_tag_for_tc.end(), m_trace_tag_new.begin(),
                 m_trace_tag_new.begin() + (tt_tag_index - m_trace_tag_explored.size()) + 1);
     }
