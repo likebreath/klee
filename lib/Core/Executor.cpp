@@ -4237,6 +4237,19 @@ void Executor::crete_init_special_function_handler() {
     {
         specialFunctionHandler->addUHandler(function, handleCreteEnableFork);
     }
+
+    function = kmodule->module->getFunction("crete_bc_print");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteBcPrint);
+    }
+
+    function = kmodule->module->getFunction("crete_is_symbolic");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteIsSymbolic);
+    }
+
 }
 
 Executor::StatePair
@@ -5136,6 +5149,47 @@ void Executor::handleQemuRaiseInterrupt2(klee::Executor* executor,
     executor->crete_abortCurrentTBExecution(state);
 
     assert(0 && "[CRETE Error] interrupt should be invisible for replay\n");
+}
+
+void Executor::handleCreteIsSymbolic(klee::Executor* executor,
+        klee::ExecutionState* state,
+        klee::KInstruction* target,
+        std::vector<klee::ref<klee::Expr> > &args) {
+    assert(args.size() == 1);
+
+    ref<Expr> input_var = args[0];
+
+    if(isa<klee::ConstantExpr>(input_var))
+    {
+        executor->bindLocal(target, *state, ConstantExpr::create(0, 1));
+    } else {
+        executor->bindLocal(target, *state, ConstantExpr::create(1, 1));
+    }
+}
+
+void Executor::handleCreteBcPrint(klee::Executor* executor,
+        klee::ExecutionState* state,
+        klee::KInstruction* target,
+        std::vector<klee::ref<klee::Expr> > &args) {
+    assert(args.size() == 1);
+
+    ref<Expr> msg_addr = args[0];
+
+    assert(isa<klee::ConstantExpr>(msg_addr));
+
+    uint64_t msg_addr_value = dyn_cast<ConstantExpr>(msg_addr)->getZExtValue();
+
+    ObjectPair res;
+    bool found = state->addressSpace.resolveOne(dyn_cast<ConstantExpr>(msg_addr), res);
+    if(found)
+    {
+        fprintf(stderr, "crete_bc_print: \"");
+        for(uint64_t i = 0; i < res.second->size; ++i)
+        {
+            fprintf(stderr, "%c", (char)dyn_cast<ConstantExpr>(res.second->read8(i))->getZExtValue());
+        }
+        fprintf(stderr, "\"\n");
+    }
 }
 
 void Executor::handleCreteBcAssert(klee::Executor* executor,
