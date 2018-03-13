@@ -618,6 +618,16 @@ private:
   void crete_check_sym_addr(ExecutionState &state, ref<Expr> address);
 
 // Debugging
+  static void handleCreteIsSymbolic(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
+  static void handleCreteBcPrint(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args);
+
   static void handleCreteBcAssert(klee::Executor* executor,
           klee::ExecutionState* state,
           klee::KInstruction* target,
