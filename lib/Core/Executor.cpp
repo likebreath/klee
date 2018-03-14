@@ -3569,6 +3569,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
 
       CRETE_DBG(
       fprintf(stderr, "[CRETE Warning] Concretization: symbolic address.\n");
+      state.print_stack();
       );
   }
 #endif // CRETE_CONFIG
@@ -5190,6 +5191,7 @@ void Executor::handleCreteBcPrint(klee::Executor* executor,
         }
         fprintf(stderr, "\"\n");
     }
+    state->print_stack();
 }
 
 void Executor::handleCreteBcAssert(klee::Executor* executor,

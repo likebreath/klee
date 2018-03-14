@@ -504,12 +504,13 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         return;
     }
 
-    CRETE_DBG(
+//    CRETE_DBG(
     if(!is_captured_br)
     {
+        state.print_stack();
         fprintf(stderr, "processTestCase(): not is_captured_br\n");
     }
-    );
+//    );
 
     std::vector<crete::TestCasePatchElement_ty> tcp_elems;
     bool concolic_success = m_interpreter->crete_getConcolicSolution(state, tcp_elems);
