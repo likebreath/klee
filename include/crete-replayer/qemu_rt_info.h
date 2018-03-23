@@ -175,6 +175,8 @@ public:
 	uint64_t get_tt_node_br_num(uint64_t tt_tag_index) const;
 	bool is_tt_node_explored(uint64_t tt_tag_index) const;
 
+	uint64_t get_tt_node_pc(uint64_t tt_tag_index) const;
+
 	// Concolic test generation
 	crete::TestCaseIssueIndex get_base_tc_issue_index() const {return m_base_tc_issue_index;}
 

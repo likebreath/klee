@@ -593,6 +593,16 @@ bool QemuRuntimeInfo::is_tt_node_explored(uint64_t tt_tag_index) const
     }
 }
 
+uint64_t QemuRuntimeInfo::get_tt_node_pc(uint64_t tt_tag_index) const
+{
+    assert(tt_tag_index < (m_trace_tag_explored.size() + m_trace_tag_new.size()));
+
+    if(tt_tag_index < m_trace_tag_explored.size()) {
+        return m_trace_tag_explored[tt_tag_index].m_tb_pc;
+    } else {
+        return m_trace_tag_new[tt_tag_index - m_trace_tag_explored.size()].m_tb_pc;
+    }
+}
 
 /*****************************/
 /* Functions for klee */
