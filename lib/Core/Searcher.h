@@ -77,6 +77,9 @@ namespace klee {
       NURS_ICnt,
       NURS_CPICnt,
       NURS_QC
+#if defined(CRETE_CONFIG)
+      ,CRETE_DFS,
+#endif
     };
   };
 
@@ -299,6 +302,21 @@ namespace klee {
     }
   };
 
+#if defined(CRETE_CONFIG)
+  class CRETE_DFSSearcher : public Searcher {
+    std::deque<ExecutionState*> states;
+
+  public:
+    ExecutionState &selectState();
+    void update(ExecutionState *current,
+                const std::vector<ExecutionState *> &addedStates,
+                const std::vector<ExecutionState *> &removedStates);
+    bool empty() { return states.empty(); }
+    void printName(llvm::raw_ostream &os) {
+      os << "CRETE_DFSSearcher\n";
+    }
+  };
+#endif
 }
 
 #endif
