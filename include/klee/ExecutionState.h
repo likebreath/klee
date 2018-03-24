@@ -193,6 +193,9 @@ public:
   // TODO: xxx To be tested with crete_assume
   bool crete_fork_enabled;
 
+  // enable/disable full symbolic execution
+  bool crete_full_se_enabled;
+
   // flag to see whether the current TB is tainted by symbolic values
   bool crete_tb_tainted;
   bool crete_dbg_ta_fail;

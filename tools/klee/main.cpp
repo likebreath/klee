@@ -459,10 +459,18 @@ int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty& tcp_tt,
     struct stat sb;
     if(!(stat(CRETE_SVM_TEST_FOLDER, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?
         if(mkdir(CRETE_SVM_TEST_FOLDER, 0777) == -1) // create dir.
-            assert(0 && "can't create ktest_pool directory");
+            assert(0 && "can't create CRETE_SVM_TEST_FOLDER directory");
+
+    if(!(stat(CRETE_SVM_TEST_FOLDER_SE, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?
+        if(mkdir(CRETE_SVM_TEST_FOLDER_SE, 0777) == -1) // create dir.
+            assert(0 && "can't create CRETE_SVM_TEST_FOLDER_SE directory");
 
     std::stringstream kt_file_name;
-    kt_file_name << CRETE_SVM_TEST_FOLDER;
+    if(from_captured_br)
+        kt_file_name << CRETE_SVM_TEST_FOLDER;
+    else
+        kt_file_name << CRETE_SVM_TEST_FOLDER_SE;
+
     kt_file_name << "/";
     kt_file_name << id;
     kt_file_name << ".bin";
@@ -506,14 +514,6 @@ void KleeHandler::processTestCase(const ExecutionState &state,
         return;
     }
 
-//    CRETE_DBG(
-    if(!is_captured_br)
-    {
-        state.print_stack();
-        fprintf(stderr, "processTestCase(): not is_captured_br\n");
-    }
-//    );
-
     std::vector<crete::TestCasePatchElement_ty> tcp_elems;
     bool concolic_success = m_interpreter->crete_getConcolicSolution(state, tcp_elems);
 
@@ -531,7 +531,14 @@ void KleeHandler::processTestCase(const ExecutionState &state,
             klee_warning("unable to write output test case, losing it");
         }
 
-        CRETE_DBG(std::cerr << std::dec << "tc-" << m_testIndex << ", success = " << concolic_success << std::endl;);
+//        CRETE_DBG(
+//        std::cerr << std::dec << "tc-" << m_testIndex << ", success = " << concolic_success << std::endl;
+        if(!is_captured_br)
+        {
+            fprintf(stderr, "processTestCase(): not is_captured_br\n");
+            state.print_stack();
+        }
+//        );
     } else {
         klee_warning("unable to get symbolic solution, losing test case");
     }
