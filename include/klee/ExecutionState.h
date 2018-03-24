@@ -200,6 +200,9 @@ public:
   // current tb_pc
   uint64_t crete_current_tb_pc;
 
+  // Indicator of whether the current path follows the concolic path
+  bool crete_concolic_path;
+
   void pushCreteConcolic(ConcolicVariable cv);
   ConcolicVariable getFirstConcolic();
   void printCreteConolic();

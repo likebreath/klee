@@ -31,6 +31,9 @@ namespace {
 			clEnumValN(Searcher::NURS_ICnt, "nurs:icnt", "use NURS with Instr-Count"),
 			clEnumValN(Searcher::NURS_CPICnt, "nurs:cpicnt", "use NURS with CallPath-Instr-Count"),
 			clEnumValN(Searcher::NURS_QC, "nurs:qc", "use NURS with Query-Cost")
+#if defined(CRETE_CONFIG)
+			,clEnumValN(Searcher::CRETE_DFS, "crete_dfs", "use DFS except for the concolic path (always go as the last state)")
+#endif
 			KLEE_LLVM_CL_VAL_END));
 
   cl::opt<bool>
@@ -86,6 +89,9 @@ Searcher *getNewSearcher(Searcher::CoreSearchType type, Executor &executor) {
   case Searcher::NURS_ICnt: searcher = new WeightedRandomSearcher(WeightedRandomSearcher::InstCount); break;
   case Searcher::NURS_CPICnt: searcher = new WeightedRandomSearcher(WeightedRandomSearcher::CPInstCount); break;
   case Searcher::NURS_QC: searcher = new WeightedRandomSearcher(WeightedRandomSearcher::QueryCost); break;
+#if defined(CRETE_CONFIG)
+  case Searcher::CRETE_DFS: searcher = new CRETE_DFSSearcher(); break;
+#endif
   }
 
   return searcher;
