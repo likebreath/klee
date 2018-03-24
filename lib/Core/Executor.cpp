@@ -806,7 +806,23 @@ void Executor::branch(ExecutionState &state,
 
   for (unsigned i=0; i<N; ++i)
     if (result[i])
-      addConstraint(*result[i], conditions[i]);
+    {
+        addConstraint(*result[i], conditions[i]);
+
+#if defined(CRETE_CONFIG)
+        // Set state->crete_concolic_path for seacher to de-prioritize "concolic" path
+        if(result[i]->crete_concolic_path)
+        {
+            ref<Expr> evalResult = result[i]->concolics.evaluate(conditions[i]);
+            assert(isa<ConstantExpr>(evalResult));
+            ref<ConstantExpr> condition_value = dyn_cast<ConstantExpr>(evalResult);
+
+            if(condition_value->isFalse()) {
+                result[i]->crete_concolic_path = false;
+            }
+        }
+#endif
+    }
 }
 
 Executor::StatePair 
@@ -1026,6 +1042,23 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
 
     addConstraint(*trueState, condition);
     addConstraint(*falseState, Expr::createIsZero(condition));
+
+#if defined(CRETE_CONFIG)
+    // Set state->crete_concolic_path for seacher to de-prioritize "concolic" path
+    assert(trueState->crete_concolic_path == falseState->crete_concolic_path);
+    if(trueState->crete_concolic_path)
+    {
+        ref<Expr> evalResult = trueState->concolics.evaluate(condition);
+        assert(isa<ConstantExpr>(evalResult));
+        ref<ConstantExpr> condition_value = dyn_cast<ConstantExpr>(evalResult);
+
+        if(condition_value->isFalse()) {
+            trueState->crete_concolic_path = false;
+        } else {
+            falseState->crete_concolic_path = false;
+        }
+    }
+#endif
 
     // Kinda gross, do we even really still want this option?
     if (MaxDepth && MaxDepth<=trueState->depth) {
@@ -1722,7 +1755,23 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 #if !defined(CRETE_CONFIG)
       Executor::StatePair branches = fork(state, cond, false);
 #else
-      Executor::StatePair branches = crete_concolic_fork(state, cond);
+      Executor::StatePair branches;
+      if(state.crete_full_se_enabled)
+      {
+          branches = fork(state, cond, false);
+          CRETE_DBG(
+          if(branches.first && branches.second)
+          {
+              fprintf(stderr, "crete forking states:\n");
+
+              state.print_stack();
+              ki->inst->dump();
+          }
+          );
+
+      } else {
+          branches = crete_concolic_fork(state, cond);
+      }
 #endif
 
       // NOTE: There is a hidden dependency here, markBranchVisited
@@ -1854,7 +1903,29 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 #if !defined(CRETE_CONFIG)
       branch(state, conditions, branches);
 #else
-      crete_concolic_branch(state, conditions, branches);
+      if(state.crete_full_se_enabled)
+      {
+          branch(state, conditions, branches);
+
+          CRETE_DBG(
+          int br_count = 0;
+          for(std::vector<ExecutionState*>::iterator bit = branches.begin();
+                  bit != branches.end(); ++bit) {
+              if(*bit)
+                  br_count++;
+          }
+
+          if(br_count > 1)
+          {
+              fprintf(stderr, "crete forking states: %d\n", br_count);
+
+              state.print_stack();
+              ki->inst->dump();
+          }
+          );
+      } else {
+          crete_concolic_branch(state, conditions, branches);
+      }
 #endif
 
       std::vector<ExecutionState*>::iterator bit = branches.begin();
@@ -4239,6 +4310,18 @@ void Executor::crete_init_special_function_handler() {
         specialFunctionHandler->addUHandler(function, handleCreteEnableFork);
     }
 
+    function = kmodule->module->getFunction("crete_disable_symbolic_execution");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteDisableSymbolicExecution);
+    }
+
+    function = kmodule->module->getFunction("crete_enable_symbolic_execution");
+    if(function)
+    {
+        specialFunctionHandler->addUHandler(function, handleCreteEnableSymbolicExecution);
+    }
+
     function = kmodule->module->getFunction("crete_bc_print");
     if(function)
     {
@@ -4375,6 +4458,10 @@ void Executor::crete_concolic_branch(ExecutionState &state,
             addConstraint(*newState, conditions[i]);
             interpreterHandler->processTestCase(*newState, 0, 0, false);
             delete newState;
+
+//            CRETE_DBG(
+            fprintf(stderr, "crete_concolic_branch()\n");
+//            );
         }
     }
 
@@ -5038,6 +5125,62 @@ void Executor::handleCreteEnableFork(klee::Executor* executor,
     state->crete_fork_enabled = true;
 }
 
+void Executor::handleCreteDisableSymbolicExecution(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args)
+{
+    assert(state->crete_full_se_enabled);
+    assert(state->crete_fork_enabled);
+    assert(!executor->states.empty());
+
+    if(state->crete_concolic_path)
+    {
+        assert(executor->states.size() == 1 &&
+                "[CRETE ERROR] With 'crete_dfs', concolic path should always be explored at last during full symbolic execution!\n");
+
+        // For path of input seed, just recover constraint since the se was enabled
+        state->constraints = executor->crete_cached_constraints;
+        state->crete_full_se_enabled = false;
+    } else {
+        assert(executor->states.size() > 1 &&
+                "[CRETE ERROR] With 'crete_dfs', concolic path should always be explored at last during full symbolic execution!\n");
+
+        // For new paths: terminate state and generate test case
+        executor->crete_terminateStateOnExit(*state, false);
+
+//        CRETE_DBG(
+        bool check = false;
+        assert(state->constraints.size() >= executor->crete_cached_constraints.size());
+        for(ConstraintManager::constraint_iterator it =
+                state->constraints.begin() + executor->crete_cached_constraints.size();
+                it != state->constraints.end(); ++ it) {
+            ref<Expr> evalResult = state->concolics.evaluate(*it);
+            assert(isa<ConstantExpr>(evalResult));
+            if(dyn_cast<ConstantExpr>(evalResult)->isFalse())
+            {
+                check = true;
+            }
+        }
+        assert(check);
+//        );
+    }
+}
+
+void Executor::handleCreteEnableSymbolicExecution(klee::Executor* executor,
+          klee::ExecutionState* state,
+          klee::KInstruction* target,
+          std::vector<klee::ref<klee::Expr> > &args)
+{
+    assert(!state->crete_full_se_enabled);
+    assert(executor->states.size() == 1 &&
+            "[CRETE ERROR] With 'crete_dfs', concolic path should always be explored at last during full symbolic execution!\n");
+    assert(state->crete_fork_enabled);
+
+    state->crete_full_se_enabled = true;
+    executor->crete_cached_constraints = state->constraints;
+}
+
 /* Handler to replay generic interrupt:
  *     1. Verify the interrupt info between klee and qemu are matched
  *     2. Abort the execution of current TB and continue to execute the next instruction in main
@@ -5191,7 +5334,6 @@ void Executor::handleCreteBcPrint(klee::Executor* executor,
         }
         fprintf(stderr, "\"\n");
     }
-    state->print_stack();
 }
 
 void Executor::handleCreteBcAssert(klee::Executor* executor,

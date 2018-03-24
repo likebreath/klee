@@ -519,6 +519,8 @@ public:
 
 #if defined(CRETE_CONFIG)
 private:
+  ConstraintManager crete_cached_constraints;
+private:
   // crete external functions invoked by klee
   void crete_init_symbolics(ExecutionState &state);
 
@@ -599,6 +601,14 @@ private:
             klee::KInstruction* target,
             std::vector<klee::ref<klee::Expr> > &args);
   static void handleCreteEnableFork(klee::Executor* executor,
+            klee::ExecutionState* state,
+            klee::KInstruction* target,
+            std::vector<klee::ref<klee::Expr> > &args);
+  static void handleCreteDisableSymbolicExecution(klee::Executor* executor,
+            klee::ExecutionState* state,
+            klee::KInstruction* target,
+            std::vector<klee::ref<klee::Expr> > &args);
+  static void handleCreteEnableSymbolicExecution(klee::Executor* executor,
             klee::ExecutionState* state,
             klee::KInstruction* target,
             std::vector<klee::ref<klee::Expr> > &args);
