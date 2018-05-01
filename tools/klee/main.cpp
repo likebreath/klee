@@ -441,9 +441,11 @@ llvm::raw_fd_ostream *KleeHandler::openTestFile(const std::string &suffix,
 
 int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty& tcp_tt,
         const std::vector<crete::TestCasePatchElement_ty>& tcp_elems,
-        const crete::TestCaseIssueIndex& base_tc_issue_index)
+        const crete::TestCaseIssueIndex& base_tc_issue_index,
+        const unsigned id)
 {
     static uint64_t g_test_case_count = 0;
+    assert(id == ++g_test_case_count);
 
     crete::TestCase ctc(tcp_tt, tcp_elems, base_tc_issue_index);
 
@@ -455,7 +457,7 @@ int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty& tcp_tt,
     std::stringstream kt_file_name;
     kt_file_name << CRETE_SVM_TEST_FOLDER;
     kt_file_name << "/";
-    kt_file_name << ++g_test_case_count;
+    kt_file_name << id;
     kt_file_name << ".bin";
 
     std::ofstream ktest_pool_file(kt_file_name.str().c_str(), std::ios_base::out | std::ios_base::binary);
@@ -497,7 +499,11 @@ void KleeHandler::processTestCase(const ExecutionState &state,
 
     if(concolic_success)
     {
-        if (!crete_concolicTest_tofile(tcp_tt, tcp_elems, g_qemu_rt_Info->get_base_tc_issue_index()))
+        if(errorMessage)
+        {
+            fprintf(stderr, "[CRETE INFO] %s: tc-%d\n", errorMessage, id);
+        }
+        if (!crete_concolicTest_tofile(tcp_tt, tcp_elems, g_qemu_rt_Info->get_base_tc_issue_index(), id))
         {
             klee_warning("unable to write output test case, losing it");
         }

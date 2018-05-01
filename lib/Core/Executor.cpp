@@ -4954,8 +4954,10 @@ void Executor::handleCreteGetDynamicAddr(klee::Executor* executor,
     ref<Expr> ptr_static_addr= args[0];
 
     if (!isa<ConstantExpr>(ptr_static_addr)){
-          ref<Expr> sym_address = state->constraints.simplifyExpr(ptr_static_addr);
-          ptr_static_addr = state->concolics.evaluate(sym_address);
+        executor->crete_check_sym_addr(*state, ptr_static_addr);
+
+        ref<Expr> sym_address = state->constraints.simplifyExpr(ptr_static_addr);
+        ptr_static_addr = state->concolics.evaluate(sym_address);
     }
 
     uint64_t static_addr = dyn_cast<ConstantExpr>(ptr_static_addr)->getZExtValue();
@@ -5173,7 +5175,7 @@ std::string Executor::crete_readStringAtAddress(Executor &executor,
 // crete-checkers
 // checks on symbolic address:
 // 1. Whether the concolic variable is constrained to be non-zero, if not fire a report with a test case
-void Executor::crete_check_sym_addr(const ExecutionState &state, ref<Expr> address)
+void Executor::crete_check_sym_addr(ExecutionState &state, ref<Expr> address)
 {
     if(isa<ConstantExpr>(address))
         return;
@@ -5204,13 +5206,18 @@ void Executor::crete_check_sym_addr(const ExecutionState &state, ref<Expr> addre
         assert(success);
         if(success && !res)
         {
-            fprintf(stderr, "[CRETE Report] Potential bugs: zero-values are allowed for \'%s\' in a symbolic address.\n",
+            fprintf(stderr, "-----------------------------\n"
+                    "[CRETE Report] Potential bugs: zero-values are allowed for \'%s\' in a symbolic address.\n",
                     array->name.c_str());
 
             ExecutionState st(state);
             st.addConstraint(eq_zeros);
 
-            interpreterHandler->processTestCase(st, "potential bug", "crete");
+            interpreterHandler->processTestCase(st, "potential bug (null pointer dereference)", "crete");
+            fprintf(stderr, "-----------------------------\n");
+
+            // Only report the bug once by adding the right constraints
+            state.addConstraint(Expr::createIsZero(eq_zeros));
         }
     }
 }
