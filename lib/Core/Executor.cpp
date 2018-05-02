@@ -5212,12 +5212,21 @@ void Executor::crete_check_sym_addr(ExecutionState &state, ref<Expr> address)
 
             ExecutionState st(state);
             st.addConstraint(eq_zeros);
-
             interpreterHandler->processTestCase(st, "potential bug (null pointer dereference)", "crete");
-            fprintf(stderr, "-----------------------------\n");
 
-            // Only report the bug once by adding the right constraints
-            state.addConstraint(Expr::createIsZero(eq_zeros));
+            // Only report the bug once by using concrete value on the problematic symbolic array
+            const vector<unsigned char>& concrete_values = state.concolics.bindings.at(array);
+            assert(concrete_values.size() == size);
+            for(unsigned i = 0; i < size; ++i) {
+                ref<Expr> read_byte = ReadExpr::create(ul,
+                        ConstantExpr::alloc(i, Expr::Int32));
+                ref<Expr> concrete_byte =
+                        ConstantExpr::alloc(concrete_values[i],Expr::Int8);
+                ref<Expr> concretize = EqExpr::create(read_byte, concrete_byte);
+                state.addConstraint(concretize);
+            }
+
+            fprintf(stderr, "-----------------------------\n");
         }
     }
 }
