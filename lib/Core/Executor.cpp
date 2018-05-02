@@ -1174,23 +1174,25 @@ void Executor::bindLocal(KInstruction *target, ExecutionState &state,
   );
 
   CRETE_DBG(
-  std::cerr << "left_value: ";
-  ConstantExpr *CE;
-  if(!isa<ConstantExpr>(value)){
-      ref<Expr> evalResult = state.concolics.evaluate(value);
-      assert(isa<ConstantExpr>(evalResult));
-      CE = dyn_cast<ConstantExpr>(evalResult);
-      std::cerr << "symbolic value";
-  } else {
-      CE = dyn_cast<ConstantExpr>(value);
+  if(crete_enable_prints) {
+      std::cerr << "left_value: ";
+      ConstantExpr *CE;
+      if(!isa<ConstantExpr>(value)){
+          ref<Expr> evalResult = state.concolics.evaluate(value);
+          assert(isa<ConstantExpr>(evalResult));
+          CE = dyn_cast<ConstantExpr>(evalResult);
+          std::cerr << "symbolic value";
+      } else {
+          CE = dyn_cast<ConstantExpr>(value);
+      }
+
+      std::string str_val;
+      CE->toString(str_val);
+      std::cerr << " (" << std::hex << std::atoll(str_val.c_str()) << ")\n";
+
+      //  if(!isa<ConstantExpr>(value))
+      //      std::cerr << "tb: %" << dec << state.m_qemu_tb_count + 1 << ": symbolic assignment\n" << std::endl;
   }
-
-  std::string str_val;
-  CE->toString(str_val);
-  std::cerr << " (" << std::hex << std::atoll(str_val.c_str()) << ")\n";
-
-  //  if(!isa<ConstantExpr>(value))
-  //      std::cerr << "tb: %" << dec << state.m_qemu_tb_count + 1 << ": symbolic assignment\n" << std::endl;
   );
 #endif //CRETE_CONFIG
 }
@@ -4731,6 +4733,7 @@ void Executor::handleCreteQemuTbPrologue(klee::Executor* executor,
     if(tb_index_value >= PRINT_TB_INDEX)
     {
         DebugPrintInstructions.push_back(STDERR_ALL);
+        crete_enable_prints = 1;
     });
 
     CRETE_DBG_TA(

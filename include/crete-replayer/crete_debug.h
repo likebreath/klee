@@ -21,6 +21,7 @@ extern "C" {
 //#define CRETE_DEBUG_CONCOLIC_TG
 
 #define PRINT_TB_INDEX 0xfffffff
+static int crete_enable_prints = 0;
 
 #ifdef CRETE_DEBUG_GENERAL
 #define CRETE_DBG(x) do { x } while(0)

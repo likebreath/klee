@@ -528,8 +528,14 @@ void QemuRuntimeInfo::check_trace_tag(uint64_t tt_tag_index, uint64_t tb_index,
     // Assumption: conditional br instruction in KLEE and the branches in trace-tag should be matched one by one
     if(current_tt_node->m_tb_count != tb_index)
     {
-        fprintf(stderr, "current_tt_node->m_tb_count = %lu, tb_index = %lu\n",
-                current_tt_node->m_tb_count, tb_index);
+        fprintf(stderr, "tb_index = %lu, tt_tag_index = %lu\n"
+                "current_tt_node->m_tb_count = %lu, current_tt_node->m_tb_pc = %p, opc = %d\n",
+                tb_index, tt_tag_index,
+                current_tt_node->m_tb_count,
+                (void *)current_tt_node->m_tb_pc,
+                current_tt_node->m_last_opc);
+
+
         assert(0 && "[Trace Tag] Assumption broken\n");
     }
 
