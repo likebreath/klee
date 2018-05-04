@@ -117,6 +117,26 @@ using namespace klee;
 #include "crete-replayer/crete_debug.h"
 
 #include <crete/trace_tag.h>
+
+namespace klee {
+class CreteChecker_Pointer
+{
+private:
+    set<string> m_target_func_name;
+    set<string> m_symbolics_to_check;
+
+public:
+    CreteChecker_Pointer();
+
+    void add_initial_constraint(ExecutionState &state,
+            const Array *symbolics, const vector<uint8_t> &concretes);
+    bool is_symbolics_to_check(const string &sym_name);
+private:
+    bool is_target_func(const string &func_name);
+};
+
+static CreteChecker_Pointer crete_checker_ptr;
+}
 #endif // CRETE_CONFIG
 
 
@@ -4632,7 +4652,7 @@ std::vector<ref<Expr> > Executor::crete_create_concolic_array(
         ExecutionState* state,
         const std::string& name,
         uint64_t size,
-        std::vector<uint8_t> &concreteBuffer) {
+        const vector<uint8_t> &concreteBuffer) {
     assert(size == concreteBuffer.size());
 
     std::string sname = state->crete_get_unique_name(name);
@@ -4659,6 +4679,9 @@ std::vector<ref<Expr> > Executor::crete_create_concolic_array(
     state->symbolics.push_back(std::make_pair(mo, array));
 
     state->concolics.add(array, concreteBuffer);
+
+    // Add initial constraint if applicable
+    crete_checker_ptr.add_initial_constraint(*state, array, concreteBuffer);
 
     return result;
 }
@@ -5190,7 +5213,8 @@ void Executor::crete_check_sym_addr(ExecutionState &state, ref<Expr> address)
     boost::unordered_set<const Array*> checked_arr;
     for(constraint_dependency_ty::const_iterator it = deps.begin();
             it != deps.end(); ++it) {
-        if(!checked_arr.insert(it->first).second)
+        if(!checked_arr.insert(it->first).second ||
+                !crete_checker_ptr.is_symbolics_to_check(it->first->name))
             continue;
 
         const Array *array = it->first;
@@ -5204,10 +5228,15 @@ void Executor::crete_check_sym_addr(ExecutionState &state, ref<Expr> address)
                     Expr::createIsZero(read_byte));
         }
 
-        bool res;
-        bool success = solver->mustBeFalse(state, eq_zeros, res);
+        double timeout = coreSolverTimeout;
+        solver->setTimeout(timeout);
+        Solver::Validity res;
+        bool success = solver->evaluate(state, eq_zeros, res);
+        solver->setTimeout(0);
+
         assert(success);
-        if(success && !res)
+//        if(success && res == Solver::Unknown)
+        if(success && res != Solver::False)
         {
             fprintf(stderr, "-----------------------------\n"
                     "[CRETE Report] Potential bugs: zero-values are allowed for \'%s\' in a symbolic address.\n",
@@ -5219,18 +5248,125 @@ void Executor::crete_check_sym_addr(ExecutionState &state, ref<Expr> address)
 
             // Only report the bug once by using concrete value on the problematic symbolic array
             const vector<unsigned char>& concrete_values = state.concolics.bindings.at(array);
+            ref<Expr> eq_concretes = ConstantExpr::alloc(1,Expr::Bool);
             assert(concrete_values.size() == size);
             for(unsigned i = 0; i < size; ++i) {
                 ref<Expr> read_byte = ReadExpr::create(ul,
                         ConstantExpr::alloc(i, Expr::Int32));
                 ref<Expr> concrete_byte =
                         ConstantExpr::alloc(concrete_values[i],Expr::Int8);
-                ref<Expr> concretize = EqExpr::create(read_byte, concrete_byte);
-                state.addConstraint(concretize);
+
+                eq_concretes = AndExpr::create(eq_concretes, EqExpr::create(read_byte, concrete_byte));
             }
+
+            state.addConstraint(eq_concretes);
 
             fprintf(stderr, "-----------------------------\n");
         }
     }
 }
+
+CreteChecker_Pointer::CreteChecker_Pointer()
+{
+    // Note: should be consistent with list of functions in
+    // "guest/kernel-modules/kprobe_kernel_api"
+    m_target_func_name.insert("__alloc_ei_netdev");
+    m_target_func_name.insert("__alloc_pages_nodemask");
+    m_target_func_name.insert("__alloc_skb");
+    m_target_func_name.insert("__kmalloc");
+    m_target_func_name.insert("__napi_alloc_skb");
+    m_target_func_name.insert("__netdev_alloc_skb");
+    m_target_func_name.insert("__pskb_pull_tail");
+    m_target_func_name.insert("__request_region");
+    m_target_func_name.insert("alloc_etherdev_mqs");
+    m_target_func_name.insert("alloc_pages_current");
+    m_target_func_name.insert("build_skb");
+    m_target_func_name.insert("dev_get_drvdata");
+    m_target_func_name.insert("dma_pool_alloc");
+    m_target_func_name.insert("dma_pool_create");
+    m_target_func_name.insert("ioremap_nocache");
+    m_target_func_name.insert("kmem_cache_alloc_trace");
+    m_target_func_name.insert("netdev_alloc_frag");
+    m_target_func_name.insert("pci_get_device");
+    m_target_func_name.insert("pci_get_domain_bus_and_slot");
+    m_target_func_name.insert("pci_iomap");
+    m_target_func_name.insert("pci_ioremap_bar");
+    m_target_func_name.insert("scsi_host_alloc");
+    m_target_func_name.insert("sg_next");
+    m_target_func_name.insert("snd_ctl_new1");
+    m_target_func_name.insert("snd_info_create_card_entry");
+    m_target_func_name.insert("snd_pci_quirk_lookup");
+    m_target_func_name.insert("trace_event_buffer_reserve");
+    m_target_func_name.insert("vzalloc");
+}
+
+void CreteChecker_Pointer::add_initial_constraint(ExecutionState &state,
+        const Array *symbolics, const vector<uint8_t> &concretes) {
+    if(!is_target_func(symbolics->name))
+        return;
+
+    // Initial constraint to add: (eq NULL or eq concretes)
+    const uint64_t size = symbolics->size;
+    assert(concretes.size() == size);
+
+    UpdateList ul(symbolics, 0);
+    ref<Expr> eq_zeros = ConstantExpr::alloc(1,Expr::Bool);
+    ref<Expr> eq_concretes = ConstantExpr::alloc(1,Expr::Bool);
+    bool perform_check = false;
+    for(unsigned i = 0; i < size; ++i) {
+        if(concretes[i])
+        {
+            perform_check = true;
+        }
+
+        ref<Expr> read_byte  = ReadExpr::create(ul,
+                ConstantExpr::alloc(i,Expr::Int32));
+        ref<Expr> concrete_byte =
+                ConstantExpr::alloc(concretes[i],Expr::Int8);
+
+        eq_zeros = AndExpr::create(eq_zeros, Expr::createIsZero(read_byte));
+        eq_concretes = AndExpr::create(eq_concretes, EqExpr::create(read_byte, concrete_byte));
+    }
+
+    ref<Expr> constraint_to_add = OrExpr::create(eq_zeros, eq_concretes);
+    state.addConstraint(constraint_to_add);
+
+    // Only perform check on the concolic vairable whose value is not NULL
+    if(perform_check)
+    {
+        m_symbolics_to_check.insert(symbolics->name);
+    } else {
+        // NOTE: KLEE can't simplify an "OrExpr" of "OR(A, A)" to "A".
+        // When "A" contains all concrete assignments, symbolic execution
+        // can be much faster with a constraint of "A" comparing with "OR(A, A)",
+        // because "A" may bring in concretizations and reduce the usage of check
+        // on symbolic address, solver, etc.
+        state.addConstraint(eq_zeros);
+    }
+}
+
+bool CreteChecker_Pointer::is_symbolics_to_check(const string &sym_name)
+{
+    if(m_symbolics_to_check.find(sym_name) != m_symbolics_to_check.end())
+    {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool CreteChecker_Pointer::is_target_func(const string &func_name)
+{
+    // Note: xxx assumption on naming convention of concolic variable,
+    // e.g. __kmalloc[e100.module_core+0x3fff]
+    size_t ops = func_name.find('[');
+    assert(ops != string::npos);
+    if(m_target_func_name.find(func_name.substr(0, ops)) != m_target_func_name.end())
+    {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 #endif // CRETE_CONFIG
