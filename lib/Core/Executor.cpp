@@ -119,27 +119,46 @@ using namespace klee;
 #include <crete/trace_tag.h>
 
 namespace klee {
-class CreteChecker_Pointer
+class CreteChecker
 {
-private:
+protected:
     set<string> m_target_func_name;
-    set<string> m_symbolics_to_check;
 
 public:
-    CreteChecker_Pointer();
+    virtual ~CreteChecker() {};
+    virtual void add_initial_constraint(ExecutionState &state,
+            const Array *symbolics, const vector<uint8_t> &concretes) = 0;
 
-    void add_initial_constraint(ExecutionState &state,
-            const Array *symbolics, const vector<uint8_t> &concretes);
-    bool is_symbolics_to_check(const string &sym_name);
-private:
+protected:
     bool is_target_func(const string &func_name);
 };
 
-static CreteChecker_Pointer crete_checker_ptr;
+class CreteChecker_pointer: public CreteChecker
+{
+private:
+    set<string> m_symbolics_to_check;
+
+public:
+    CreteChecker_pointer();
+    virtual void add_initial_constraint(ExecutionState &state,
+            const Array *symbolics, const vector<uint8_t> &concretes);
+    bool is_symbolics_to_check(const string &sym_name);
+};
+
+// checker on 'int' return with negative value as error code
+class CreteChecker_int_error: public CreteChecker
+{
+public:
+    CreteChecker_int_error();
+
+    virtual void add_initial_constraint(ExecutionState &state,
+            const Array *symbolics, const vector<uint8_t> &concretes);
+};
+
+static CreteChecker_pointer crete_checker_ptr;
+static CreteChecker_int_error crete_checker_int_err;
 }
 #endif // CRETE_CONFIG
-
-
 
 
 namespace {
@@ -4682,6 +4701,7 @@ std::vector<ref<Expr> > Executor::crete_create_concolic_array(
 
     // Add initial constraint if applicable
     crete_checker_ptr.add_initial_constraint(*state, array, concreteBuffer);
+    crete_checker_int_err.add_initial_constraint(*state, array, concreteBuffer);
 
     return result;
 }
@@ -5266,7 +5286,21 @@ void Executor::crete_check_sym_addr(ExecutionState &state, ref<Expr> address)
     }
 }
 
-CreteChecker_Pointer::CreteChecker_Pointer()
+bool CreteChecker::is_target_func(const string &func_name)
+{
+    // Note: xxx assumption on naming convention of concolic variable,
+    // e.g. __kmalloc[e100.module_core+0x3fff]
+    size_t ops = func_name.find('[');
+    assert(ops != string::npos);
+    if(m_target_func_name.find(func_name.substr(0, ops)) != m_target_func_name.end())
+    {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+CreteChecker_pointer::CreteChecker_pointer()
 {
     // Note: should be consistent with list of functions in
     // "guest/kernel-modules/kprobe_kernel_api"
@@ -5300,7 +5334,7 @@ CreteChecker_Pointer::CreteChecker_Pointer()
     m_target_func_name.insert("vzalloc");
 }
 
-void CreteChecker_Pointer::add_initial_constraint(ExecutionState &state,
+void CreteChecker_pointer::add_initial_constraint(ExecutionState &state,
         const Array *symbolics, const vector<uint8_t> &concretes) {
     if(!is_target_func(symbolics->name))
         return;
@@ -5345,7 +5379,7 @@ void CreteChecker_Pointer::add_initial_constraint(ExecutionState &state,
     }
 }
 
-bool CreteChecker_Pointer::is_symbolics_to_check(const string &sym_name)
+bool CreteChecker_pointer::is_symbolics_to_check(const string &sym_name)
 {
     if(m_symbolics_to_check.find(sym_name) != m_symbolics_to_check.end())
     {
@@ -5355,18 +5389,118 @@ bool CreteChecker_Pointer::is_symbolics_to_check(const string &sym_name)
     }
 }
 
-bool CreteChecker_Pointer::is_target_func(const string &func_name)
+CreteChecker_int_error::CreteChecker_int_error()
 {
-    // Note: xxx assumption on naming convention of concolic variable,
-    // e.g. __kmalloc[e100.module_core+0x3fff]
-    size_t ops = func_name.find('[');
-    assert(ops != string::npos);
-    if(m_target_func_name.find(func_name.substr(0, ops)) != m_target_func_name.end())
+    m_target_func_name.insert("__pci_enable_wake");
+    m_target_func_name.insert("__pci_register_driver");
+    m_target_func_name.insert("__pm_runtime_suspend");
+    m_target_func_name.insert("_dev_info");
+    m_target_func_name.insert("dev_close");
+    m_target_func_name.insert("dev_err");
+    m_target_func_name.insert("dev_open");
+    m_target_func_name.insert("dev_set_drvdata");
+    m_target_func_name.insert("dev_warn");
+    m_target_func_name.insert("device_set_wakeup_enable");
+    m_target_func_name.insert("dma_alloc_from_coherent");
+    m_target_func_name.insert("dma_set_mask");
+    m_target_func_name.insert("dma_supported");
+    m_target_func_name.insert("down_timeout");
+    m_target_func_name.insert("eth_change_mtu");
+    m_target_func_name.insert("eth_mac_addr");
+    m_target_func_name.insert("eth_validate_addr");
+    m_target_func_name.insert("ethtool_op_get_ts_info");
+    m_target_func_name.insert("generic_mii_ioctl");
+    m_target_func_name.insert("mii_ethtool_gset");
+    m_target_func_name.insert("mii_ethtool_sset");
+    m_target_func_name.insert("mii_link_ok");
+    m_target_func_name.insert("mii_nway_restart");
+    m_target_func_name.insert("misc_deregister");
+    m_target_func_name.insert("misc_register");
+    m_target_func_name.insert("mod_timer");
+    m_target_func_name.insert("net_ratelimit");
+    m_target_func_name.insert("netdev_err");
+    m_target_func_name.insert("netdev_info");
+    m_target_func_name.insert("netdev_warn");
+    m_target_func_name.insert("nonseekable_open");
+    m_target_func_name.insert("param_get_int");
+    m_target_func_name.insert("param_set_int");
+    m_target_func_name.insert("pci_bus_read_config_byte");
+    m_target_func_name.insert("pci_bus_read_config_dword");
+    m_target_func_name.insert("pci_bus_read_config_word");
+    m_target_func_name.insert("pci_bus_write_config_byte");
+    m_target_func_name.insert("pci_bus_write_config_dword");
+    m_target_func_name.insert("pci_bus_write_config_word");
+    m_target_func_name.insert("pci_enable_device");
+    m_target_func_name.insert("pci_enable_device_mem");
+    m_target_func_name.insert("pci_enable_msi_range");
+    m_target_func_name.insert("pci_prepare_to_sleep");
+    m_target_func_name.insert("pci_request_region");
+    m_target_func_name.insert("pci_request_regions");
+    m_target_func_name.insert("pci_request_selected_regions");
+    m_target_func_name.insert("pci_save_state");
+    m_target_func_name.insert("pci_select_bars");
+    m_target_func_name.insert("pci_set_mwi");
+    m_target_func_name.insert("pci_set_power_state");
+    m_target_func_name.insert("pci_wake_from_d3");
+    m_target_func_name.insert("pcix_get_mmrbc");
+    m_target_func_name.insert("pcix_set_mmrbc");
+    m_target_func_name.insert("probe_irq_off");
+    m_target_func_name.insert("pskb_expand_head");
+    m_target_func_name.insert("register_netdev");
+    m_target_func_name.insert("request_firmware");
+    m_target_func_name.insert("request_firmware_nowait");
+    m_target_func_name.insert("request_threaded_irq");
+    m_target_func_name.insert("scsi_esp_register");
+    m_target_func_name.insert("set_memory_wb");
+    m_target_func_name.insert("set_memory_wc");
+    m_target_func_name.insert("set_pages_array_wb");
+    m_target_func_name.insert("set_pages_array_wc");
+    m_target_func_name.insert("skb_pad");
+}
+
+void CreteChecker_int_error::add_initial_constraint(ExecutionState &state,
+        const Array *symbolics, const vector<uint8_t> &concretes) {
+    if(!is_target_func(symbolics->name))
+        return;
+
+    // Initial constraint to add,
+    // 1. if the concretes is '0', impose '0' or negative
+    // 2. if the concretes is non '0', concretize it
+    const uint64_t size = symbolics->size;
+    assert(concretes.size() == size);
+
+    UpdateList ul(symbolics, 0);
+    ref<Expr> constraint_to_add;
+    if(concretes == vector<uint8_t>(size, 0))
     {
-        return true;
+        // NOTE: xxx add constraints with "OR" may increase cost of solver a lot.
+        // Instead of adding constaint at the the beginning, impose the constraint
+        // while test generation may bring better efficiency.
+        ref<Expr> read_msb = ReadExpr::create(ul,
+                ConstantExpr::alloc(size - 1,Expr::Int32));
+        ref<Expr> must_be_negative = ExtractExpr::create(read_msb, Expr::Int8 - 1, Expr::Bool);;
+
+        ref<Expr> eq_zeros = ConstantExpr::alloc(1,Expr::Bool);
+        for(unsigned i = 0; i < size; ++i) {
+            ref<Expr> read_byte  = ReadExpr::create(ul,
+                    ConstantExpr::alloc(i,Expr::Int32));
+            eq_zeros = AndExpr::create(eq_zeros, Expr::createIsZero(read_byte));
+        }
+
+        constraint_to_add = OrExpr::create(must_be_negative, eq_zeros);
     } else {
-        return false;
+        constraint_to_add = ConstantExpr::alloc(1,Expr::Bool);
+        for(unsigned i = 0; i < size; ++i) {
+            ref<Expr> read_byte  = ReadExpr::create(ul,
+                    ConstantExpr::alloc(i,Expr::Int32));
+            ref<Expr> concrete_byte =
+                    ConstantExpr::alloc(concretes[i], Expr::Int8);
+
+            constraint_to_add = AndExpr::create(constraint_to_add, EqExpr::create(read_byte, concrete_byte));
+        }
     }
+
+    state.addConstraint(constraint_to_add);
 }
 
 #endif // CRETE_CONFIG
