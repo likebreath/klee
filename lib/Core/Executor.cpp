@@ -4791,9 +4791,30 @@ void Executor::handleCreteMakeConolicInternal(klee::Executor* executor,
     ref<Expr> expr_size = args[1];
     ref<Expr> expr_name_guest_addr = args[2];
 
-    assert(isa<ConstantExpr>(expr_guest_addr));
-    assert(isa<ConstantExpr>(expr_size));
-    assert(isa<ConstantExpr>(expr_name_guest_addr));
+    if(!isa<ConstantExpr>(expr_guest_addr))
+    {
+        CRETE_DBG(
+        fprintf(stderr, "[CRETE Warning] symbolic 'addr' in crete_make_concolic.\n");
+        expr_guest_addr->dump();
+        );
+        expr_guest_addr = state->concolics.evaluate(state->constraints.simplifyExpr(expr_guest_addr));
+    }
+    if(!isa<ConstantExpr>(expr_size))
+    {
+        CRETE_DBG(
+        fprintf(stderr, "[CRETE Warning] symbolic 'size' in crete_make_concolic.\n");
+        expr_size->dump();
+        );
+        expr_size = state->concolics.evaluate(state->constraints.simplifyExpr(expr_size));
+    }
+    if(!isa<ConstantExpr>(expr_name_guest_addr))
+    {
+        CRETE_DBG(
+        fprintf(stderr, "[CRETE Warning] symbolic 'name_guest_addr' in crete_make_concolic.\n");
+        expr_name_guest_addr->dump();
+        );
+        expr_name_guest_addr = state->concolics.evaluate(state->constraints.simplifyExpr(expr_name_guest_addr));
+    }
 
     uint64_t cv_static_addr = dyn_cast<ConstantExpr>(expr_guest_addr)->getZExtValue();
     uint64_t cv_size = dyn_cast<ConstantExpr>(expr_size)->getZExtValue();
@@ -4823,8 +4844,10 @@ void Executor::handleCreteMakeConolicInternal(klee::Executor* executor,
         ref<Expr> expr_byte = cv_page_os->read8(cv_in_page_offset + i);
         if(!isa<ConstantExpr>(expr_byte))
         {
+            CRETE_DBG(
             fprintf(stderr, "[CRETE Warning] handleCreteMakeConolicInternal(): symbolic initial value, offset = %lu:\n",i);
             expr_byte->dump();
+            );
             expr_byte = state->concolics.evaluate(state->constraints.simplifyExpr(expr_byte));
         }
 
