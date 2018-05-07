@@ -5487,7 +5487,7 @@ void CreteChecker_int_error::add_initial_constraint(ExecutionState &state,
         return;
 
     // Initial constraint to add,
-    // 1. if the concretes is '0', impose '0' or negative
+    // 1. if the concretes is '0', impose [0] or [-127,0)
     // 2. if the concretes is non '0', concretize it
     const uint64_t size = symbolics->size;
     assert(concretes.size() == size);
@@ -5499,10 +5499,23 @@ void CreteChecker_int_error::add_initial_constraint(ExecutionState &state,
         // NOTE: xxx add constraints with "OR" may increase cost of solver a lot.
         // Instead of adding constaint at the the beginning, impose the constraint
         // while test generation may bring better efficiency.
-        ref<Expr> read_msb = ReadExpr::create(ul,
-                ConstantExpr::alloc(size - 1,Expr::Int32));
-        ref<Expr> must_be_negative = ExtractExpr::create(read_msb, Expr::Int8 - 1, Expr::Bool);;
+        // ret within [-127, 0)
+        ref<Expr> target_range = ConstantExpr::alloc(1,Expr::Bool);
+        ref<Expr> eq_0xff = ConstantExpr::alloc(0xff, Expr::Int8);
+        for(unsigned i = 1; i < size; ++i) {
+            ref<Expr> read_byte  = ReadExpr::create(ul,
+                    ConstantExpr::alloc(i,Expr::Int32));
+            target_range = AndExpr::create(target_range, EqExpr::create(read_byte, eq_0xff));
+        }
 
+        // Enforce least-significant-byte as '1xxx xxxx'
+        ref<Expr> read_lsb = ReadExpr::create(ul,
+                ConstantExpr::alloc(0, Expr::Int32));
+        ref<Expr> lsb_must_be_negative = ExtractExpr::create(read_lsb, Expr::Int8 - 1, Expr::Bool);;
+
+        target_range = AndExpr::create(target_range, lsb_must_be_negative);
+
+        // ret eq 0x0
         ref<Expr> eq_zeros = ConstantExpr::alloc(1,Expr::Bool);
         for(unsigned i = 0; i < size; ++i) {
             ref<Expr> read_byte  = ReadExpr::create(ul,
@@ -5510,7 +5523,7 @@ void CreteChecker_int_error::add_initial_constraint(ExecutionState &state,
             eq_zeros = AndExpr::create(eq_zeros, Expr::createIsZero(read_byte));
         }
 
-        constraint_to_add = OrExpr::create(must_be_negative, eq_zeros);
+        constraint_to_add = OrExpr::create(target_range, eq_zeros);
     } else {
         constraint_to_add = ConstantExpr::alloc(1,Expr::Bool);
         for(unsigned i = 0; i < size; ++i) {
