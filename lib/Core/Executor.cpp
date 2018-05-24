@@ -5355,6 +5355,10 @@ CreteChecker_pointer::CreteChecker_pointer()
     m_target_func_name.insert("snd_pci_quirk_lookup");
     m_target_func_name.insert("trace_event_buffer_reserve");
     m_target_func_name.insert("vzalloc");
+    m_target_func_name.insert("__alloc_workqueue_key");
+    m_target_func_name.insert("__kmalloc_node");
+    m_target_func_name.insert("kmalloc_order_trace");
+    m_target_func_name.insert("kmem_cache_alloc");
 }
 
 void CreteChecker_pointer::add_initial_constraint(ExecutionState &state,
@@ -5479,6 +5483,10 @@ CreteChecker_int_error::CreteChecker_int_error()
     m_target_func_name.insert("set_pages_array_wb");
     m_target_func_name.insert("set_pages_array_wc");
     m_target_func_name.insert("skb_pad");
+    m_target_func_name.insert("pci_enable_msi_block");
+    m_target_func_name.insert("pci_enable_msix");
+    m_target_func_name.insert("pci_request_selected_regions_exclusive");
+    m_target_func_name.insert("scsi_add_host_with_dma");
 }
 
 void CreteChecker_int_error::add_initial_constraint(ExecutionState &state,
