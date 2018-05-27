@@ -5326,7 +5326,7 @@ bool CreteChecker::is_target_func(const string &func_name)
 CreteChecker_pointer::CreteChecker_pointer()
 {
     // Note: should be consistent with list of functions in
-    // "guest/kernel-modules/kprobe_kernel_api"
+    // "guest/kernel-modules/kprobe_kernel_api" (35)
     m_target_func_name.insert("__alloc_ei_netdev");
     m_target_func_name.insert("__alloc_pages_nodemask");
     m_target_func_name.insert("__alloc_skb");
@@ -5359,6 +5359,9 @@ CreteChecker_pointer::CreteChecker_pointer()
     m_target_func_name.insert("__kmalloc_node");
     m_target_func_name.insert("kmalloc_order_trace");
     m_target_func_name.insert("kmem_cache_alloc");
+    m_target_func_name.insert("snd_hda_spdif_out_of_nid");
+    m_target_func_name.insert("snd_pcm_lib_default_mmap");
+    m_target_func_name.insert("__symbol_get");
 }
 
 void CreteChecker_pointer::add_initial_constraint(ExecutionState &state,
@@ -5487,6 +5490,58 @@ CreteChecker_int_error::CreteChecker_int_error()
     m_target_func_name.insert("pci_enable_msix");
     m_target_func_name.insert("pci_request_selected_regions_exclusive");
     m_target_func_name.insert("scsi_add_host_with_dma");
+    m_target_func_name.insert("__pm_runtime_idle");
+    m_target_func_name.insert("__pm_runtime_resume");
+    m_target_func_name.insert("__request_module");
+    m_target_func_name.insert("set_pages_uc");
+    m_target_func_name.insert("set_pages_wb");
+    m_target_func_name.insert("snd_ac97_bus");
+    m_target_func_name.insert("snd_ac97_mixer");
+    m_target_func_name.insert("snd_ac97_pcm_assign");
+    m_target_func_name.insert("snd_ac97_pcm_close");
+    m_target_func_name.insert("snd_ac97_pcm_double_rate_rules");
+    m_target_func_name.insert("snd_ac97_pcm_open");
+    m_target_func_name.insert("snd_ac97_set_rate");
+    m_target_func_name.insert("snd_ac97_tune_hardware");
+    m_target_func_name.insert("snd_ac97_update_bits");
+    m_target_func_name.insert("snd_ac97_update_power");
+    m_target_func_name.insert("snd_card_create");
+    m_target_func_name.insert("snd_card_disconnect");
+    m_target_func_name.insert("snd_card_free");
+    m_target_func_name.insert("snd_card_proc_new");
+    m_target_func_name.insert("snd_card_register");
+    m_target_func_name.insert("snd_component_add");
+    m_target_func_name.insert("snd_ctl_add");
+    m_target_func_name.insert("snd_ctl_boolean_mono_info");
+    m_target_func_name.insert("snd_device_new");
+    m_target_func_name.insert("snd_dma_alloc_pages");
+    m_target_func_name.insert("snd_hda_build_controls");
+    m_target_func_name.insert("snd_hda_build_pcms");
+    m_target_func_name.insert("snd_hda_bus_new");
+    m_target_func_name.insert("snd_hdac_bus_alloc_stream_pages");
+    m_target_func_name.insert("snd_hda_codec_configure");
+    m_target_func_name.insert("snd_hda_codec_new");
+    m_target_func_name.insert("snd_hda_codec_prepare");
+    m_target_func_name.insert("snd_hda_lock_devices");
+    m_target_func_name.insert("snd_hda_queue_unsol_event");
+    m_target_func_name.insert("snd_pcm_add_chmap_ctls");
+    m_target_func_name.insert("snd_pcm_format_width");
+    m_target_func_name.insert("snd_pcm_hw_constraint_integer");
+    m_target_func_name.insert("snd_pcm_hw_constraint_list");
+    m_target_func_name.insert("snd_pcm_hw_constraint_minmax");
+    m_target_func_name.insert("snd_pcm_hw_constraint_msbits");
+    m_target_func_name.insert("snd_pcm_hw_constraint_ratnums");
+    m_target_func_name.insert("snd_pcm_hw_constraint_step");
+    m_target_func_name.insert("snd_pcm_lib_free_pages");
+    m_target_func_name.insert("snd_pcm_lib_ioctl");
+    m_target_func_name.insert("snd_pcm_lib_malloc_pages");
+    m_target_func_name.insert("snd_pcm_lib_preallocate_pages_for_all");
+    m_target_func_name.insert("snd_pcm_limit_hw_rates");
+    m_target_func_name.insert("snd_pcm_new");
+    m_target_func_name.insert("snd_pcm_suspend_all");
+    m_target_func_name.insert("snd_rawmidi_new");
+    m_target_func_name.insert("snd_rawmidi_receive");
+    m_target_func_name.insert("snd_rawmidi_transmit");
 }
 
 void CreteChecker_int_error::add_initial_constraint(ExecutionState &state,
