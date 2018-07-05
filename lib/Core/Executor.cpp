@@ -5291,6 +5291,36 @@ void Executor::crete_check_sym_addr(ExecutionState &state, ref<Expr> address)
 
 CreteChecker_Pointer::CreteChecker_Pointer()
 {
+    // Note: should be consistent with list of functions in
+    // "guest/kernel-modules/kprobe_kernel_api"
+    m_target_func_name.insert("__alloc_ei_netdev");
+    m_target_func_name.insert("__alloc_pages_nodemask");
+    m_target_func_name.insert("__alloc_skb");
+    m_target_func_name.insert("__kmalloc");
+    m_target_func_name.insert("__napi_alloc_skb");
+    m_target_func_name.insert("__netdev_alloc_skb");
+    m_target_func_name.insert("__pskb_pull_tail");
+    m_target_func_name.insert("__request_region");
+    m_target_func_name.insert("alloc_etherdev_mqs");
+    m_target_func_name.insert("alloc_pages_current");
+    m_target_func_name.insert("build_skb");
+    m_target_func_name.insert("dev_get_drvdata");
+    m_target_func_name.insert("dma_pool_alloc");
+    m_target_func_name.insert("dma_pool_create");
+    m_target_func_name.insert("ioremap_nocache");
+    m_target_func_name.insert("kmem_cache_alloc_trace");
+    m_target_func_name.insert("netdev_alloc_frag");
+    m_target_func_name.insert("pci_get_device");
+    m_target_func_name.insert("pci_get_domain_bus_and_slot");
+    m_target_func_name.insert("pci_iomap");
+    m_target_func_name.insert("pci_ioremap_bar");
+    m_target_func_name.insert("scsi_host_alloc");
+    m_target_func_name.insert("sg_next");
+    m_target_func_name.insert("snd_ctl_new1");
+    m_target_func_name.insert("snd_info_create_card_entry");
+    m_target_func_name.insert("snd_pci_quirk_lookup");
+    m_target_func_name.insert("trace_event_buffer_reserve");
+    m_target_func_name.insert("vzalloc");
 }
 
 void CreteChecker_Pointer::add_initial_constraint(ExecutionState &state,
