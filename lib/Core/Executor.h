@@ -550,7 +550,7 @@ private:
           ExecutionState* state,
           const std::string& name,
           uint64_t size,
-          std::vector<uint8_t> &concreteBuffer);
+          const vector<uint8_t> &concreteBuffer);
 
   //TODO:xxx do we need to make the helper function handlers as static in crete?
   // handlers for crete intrinsics
