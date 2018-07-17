@@ -5614,7 +5614,11 @@ bool CreteChecker_Pointer::is_target_func(const string &func_name)
     // Note: xxx assumption on naming convention of concolic variable,
     // e.g. __kmalloc[e100.module_core+0x3fff]
     size_t ops = func_name.find('[');
-    assert(ops != string::npos);
+    // Skip if the naming voncention does not hold
+    if(ops != string::npos) {
+        return false;
+    }
+
     if(m_target_func_name.find(func_name.substr(0, ops)) != m_target_func_name.end())
     {
         return true;
