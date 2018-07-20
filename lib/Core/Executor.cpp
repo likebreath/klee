@@ -5542,6 +5542,8 @@ CreteChecker_int_error::CreteChecker_int_error()
     m_target_func_name.insert("snd_rawmidi_new");
     m_target_func_name.insert("snd_rawmidi_receive");
     m_target_func_name.insert("snd_rawmidi_transmit");
+    m_target_func_name.insert("__mdiobus_register");
+    m_target_func_name.insert("pci_enable_msix_range");
 }
 
 void CreteChecker_int_error::add_initial_constraint(ExecutionState &state,
