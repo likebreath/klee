@@ -4627,7 +4627,6 @@ bool Executor::crete_getConcolicSolution(const ExecutionState &state,
     const constraint_dependency_ty &complete_cs_deps = state.constraints.get_complete_cs_deps();
     const constraint_dependency_ty &last_cs_deps = state.constraints.get_last_cs_deps();
 
-    solver->setTimeout(coreSolverTimeout);
     ExecutionState tmp(state);
 
     // check concolic values with exsiting constraints, if not contradict, prefer concolic values
@@ -4716,7 +4715,9 @@ bool Executor::crete_check_and_add_concolic_preference(ExecutionState &state, co
                                          ConstantExpr::alloc(concrete_value, Expr::Int8));
 
     bool mustBeFalse;
+    solver->setTimeout(coreSolverTimeout);
     bool success = solver->mustBeFalse(state, condition, mustBeFalse);
+    solver->setTimeout(0);
 
     // If constraint does not imply 'condition' is always false ( condition is not mustBeFlase),
     // 'condition' is qualified and added to constraints
