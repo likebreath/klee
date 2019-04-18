@@ -447,7 +447,8 @@ int crete_concolicTest_tofile(const crete::TestCasePatchTraceTag_ty& tcp_tt,
     static uint64_t g_test_case_count = 0;
     assert(id == ++g_test_case_count);
 
-    crete::TestCase ctc(tcp_tt, tcp_elems, base_tc_issue_index);
+    crete::TestCase ctc(tcp_tt, tcp_elems, base_tc_issue_index,
+            g_qemu_rt_Info->calculate_br_tb_pc_for_patch(tcp_tt));
 
     struct stat sb;
     if(!(stat(CRETE_SVM_TEST_FOLDER, &sb) == 0 && S_ISDIR(sb.st_mode))) // dir exists?

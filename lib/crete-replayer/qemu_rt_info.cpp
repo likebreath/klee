@@ -215,6 +215,7 @@ void QemuRuntimeInfo::init_concolics()
     ifstream inputs("concrete_inputs.bin", ios_base::in | ios_base::binary);
     assert(inputs && "failed to open concrete_inputs file!");
     const TestCase tc = read_serialized(inputs);
+    m_base_tc = tc;
 
     m_base_tc_issue_index = tc.get_issue_index();
 

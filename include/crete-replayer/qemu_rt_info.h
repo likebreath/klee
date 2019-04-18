@@ -138,6 +138,8 @@ private:
     // Concolic Test Generation
     crete::TestCaseIssueIndex m_base_tc_issue_index;
 
+    crete::TestCase m_base_tc;
+
     // For Debugging Purpose:
     // The CPUState after each interested TB being executed for cross checking on klee side
     vector<cpuStateSyncTable_ty> m_debug_cpuStateSyncTables;
@@ -177,6 +179,8 @@ public:
 
 	// Concolic test generation
 	crete::TestCaseIssueIndex get_base_tc_issue_index() const {return m_base_tc_issue_index;}
+	uint64_t calculate_br_tb_pc_for_patch(const crete::TestCasePatchTraceTag_ty &tcp_tt) const
+	{return m_base_tc.calculate_br_tb_pc_for_patch(tcp_tt);}
 
 private:
 	//TODO: xxx not a good solution
