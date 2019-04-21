@@ -179,8 +179,10 @@ public:
 
 	// Concolic test generation
 	crete::TestCaseIssueIndex get_base_tc_issue_index() const {return m_base_tc_issue_index;}
+
 	uint64_t calculate_br_tb_pc_for_patch(const crete::TestCasePatchTraceTag_ty &tcp_tt) const
 	{return m_base_tc.calculate_br_tb_pc_for_patch(tcp_tt);}
+	int get_base_tc_covNew_dist() const {return m_base_tc.get_covNew_dist();}
 
 private:
 	//TODO: xxx not a good solution
